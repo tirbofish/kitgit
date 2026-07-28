@@ -1116,6 +1116,31 @@ a:hover {
   color: var(--kg-fg);
 }
 
+.kg-search-filters {
+  margin-top: var(--kg-space-3);
+}
+
+.kg-search-filters a[aria-current="page"],
+.kg-search-filters__active {
+  border-color: var(--kg-fg);
+  color: var(--kg-fg);
+}
+
+.kg-search-block {
+  margin-top: var(--kg-space-4);
+}
+
+.kg-search-block .kg-kicker {
+  display: block;
+  margin-bottom: var(--kg-space-2);
+}
+
+.kg-search-user {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
 .kg-sr-only {
   position: absolute;
   width: 1px;
