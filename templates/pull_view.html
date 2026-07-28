@@ -98,18 +98,8 @@
           <span>
             <a href="/{{ owner.username }}/{{ repo.name }}/commits" title="View commits"><code>{{ c.short_id }}</code></a>
             <a href="/{{ owner.username }}/{{ repo.name }}/commit/{{ c.id }}">{{ c.message }}</a>
-            {% if c.verified %}
-            <details class="kg-verify">
-              <summary class="kg-badge kg-badge--verified">Verified</summary>
-              <div class="kg-verify__panel" role="dialog" aria-label="Commit signature">
-                <p class="kg-verify__fp">
-                  <strong>{{ c.verify_fingerprint_label }}:</strong>
-                  <code>{{ c.verify_fingerprint }}</code>
-                </p>
-                <p class="kg-meta">Verified on {{ c.verified_at }}</p>
-              </div>
-            </details>
-            {% endif %}
+            {% let show_unverified = false %}
+            {% include "partials/verified_badge.html" %}
           </span>
           <span class="kg-meta">{{ c.author }}</span>
         </li>

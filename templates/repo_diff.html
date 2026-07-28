@@ -21,6 +21,9 @@
   </p>
   <p class="kg-title">
     <a href="/{{ owner.username }}/{{ repo.name }}/commit/{{ commit.id }}">{{ commit.message }}</a>
+    {% let c = commit %}
+    {% let show_unverified = true %}
+    {% include "partials/verified_badge.html" %}
   </p>
 
   {{ diff_html|safe }}
