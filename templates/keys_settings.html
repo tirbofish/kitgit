@@ -17,17 +17,29 @@
   {% endif %}
 
   <span class="kg-kicker" style="margin-top:1.5rem">SSH keys</span>
+  <p class="kg-muted">Authentication keys let you push/pull over SSH. Signing keys verify signed commits.</p>
   {% if !keys.is_empty() %}
     <ul class="kg-list">
       {% for key in keys %}
-      <li>
+      <li class="kg-key-row">
         <span>
           <strong>{{ key.name }}</strong>
           <span class="kg-meta">{{ key.fingerprint }}</span>
+          <span class="kg-badge">{{ key.usage_label() }}</span>
         </span>
-        <form method="post" action="/settings/keys/{{ key.id }}/delete">
-          <button class="kg-btn kg-btn--danger-ghost" type="submit">delete</button>
-        </form>
+        <span class="kg-key-row__actions">
+          <form method="post" action="/settings/keys/{{ key.id }}/usage" class="kg-inline-form">
+            <label class="kg-sr-only" for="usage-{{ key.id }}">usage</label>
+            <select id="usage-{{ key.id }}" name="key_usage" onchange="this.form.submit()">
+              <option value="authentication"{% if key.key_usage == "authentication" %} selected{% endif %}>Authentication</option>
+              <option value="signing"{% if key.key_usage == "signing" %} selected{% endif %}>Signing</option>
+              <option value="both"{% if key.key_usage == "both" %} selected{% endif %}>Authentication &amp; Signing</option>
+            </select>
+          </form>
+          <form method="post" action="/settings/keys/{{ key.id }}/delete">
+            <button class="kg-btn kg-btn--danger-ghost" type="submit">delete</button>
+          </form>
+        </span>
       </li>
       {% endfor %}
     </ul>
@@ -40,6 +52,14 @@
     <label>
       name
       <input type="text" name="name" required />
+    </label>
+    <label>
+      usage
+      <select name="key_usage">
+        <option value="authentication" selected>Authentication</option>
+        <option value="signing">Signing</option>
+        <option value="both">Authentication &amp; Signing</option>
+      </select>
     </label>
     <label>
       public key

@@ -5,6 +5,7 @@ mod git;
 mod highlight;
 mod markdown;
 mod mfa;
+mod og;
 mod state;
 mod web;
 

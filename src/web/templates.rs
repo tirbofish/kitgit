@@ -1,3 +1,4 @@
+use crate::og::SocialMeta;
 use crate::db::models::{
     Access, BranchRule, CommitDay, GpgKey, Issue, PullRequest, Release, Repository, SshKey, User,
     UserEmail,
@@ -64,6 +65,11 @@ pub struct CommitView {
     pub author: String,
     pub email: String,
     pub time: i64,
+    pub verified: bool,
+    pub verify_kind: String,
+    pub verify_fingerprint: String,
+    pub verify_fingerprint_label: String,
+    pub verified_at: String,
 }
 
 pub struct CollaboratorView {
@@ -112,6 +118,7 @@ pub struct HomeTemplate {
     pub motd: String,
     pub my_repos: Vec<Repository>,
     pub activities: Vec<ActivityRow>,
+    pub social: SocialMeta,
 }
 
 pub struct ExploreRepo {
@@ -125,6 +132,7 @@ pub struct ExploreTemplate {
     pub viewer: Option<User>,
     pub repos: Vec<ExploreRepo>,
     pub query: String,
+    pub social: SocialMeta,
 }
 
 #[derive(Template, WebTemplate)]
@@ -139,6 +147,9 @@ pub struct LoginTemplate {
 pub struct SignupTemplate {
     pub viewer: Option<User>,
     pub error: Option<String>,
+    pub signups_enabled: bool,
+    pub signup_disabled_message: String,
+    pub invite: String,
 }
 
 #[derive(Template, WebTemplate)]
@@ -251,6 +262,7 @@ pub struct RepoHomeTemplate {
     pub starred: bool,
     pub watching: bool,
     pub forked_from: Option<(String, String)>,
+    pub social: SocialMeta,
 }
 
 #[derive(Template, WebTemplate)]
@@ -520,5 +532,44 @@ pub struct RepoSettingsTemplate {
 pub struct AdminTemplate {
     pub viewer: Option<User>,
     pub users: Vec<User>,
+    pub user_query: String,
+    pub user_page: i64,
+    pub user_pages: i64,
+    pub user_total: i64,
     pub motd: String,
+    pub announcement: String,
+    pub signups_enabled: bool,
+    pub signup_disabled_message: String,
+    pub invites: Vec<AdminInviteView>,
+    pub repos: Vec<AdminRepoView>,
+    pub repo_query: String,
+    pub repo_page: i64,
+    pub repo_pages: i64,
+    pub repo_total: i64,
+    pub stats: AdminStatsView,
+    pub flash: Option<String>,
+}
+
+pub struct AdminInviteView {
+    pub id: Uuid,
+    pub code: String,
+    pub created_at: DateTime<Utc>,
+}
+
+pub struct AdminRepoView {
+    pub id: Uuid,
+    pub owner: String,
+    pub name: String,
+    pub visibility: String,
+    pub archived: bool,
+    pub updated_at: DateTime<Utc>,
+}
+
+pub struct AdminStatsView {
+    pub user_count: i64,
+    pub repo_count: i64,
+    pub public_repo_count: i64,
+    pub recent_signups: i64,
+    pub active_invites: i64,
+    pub disk_label: String,
 }

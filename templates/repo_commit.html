@@ -13,7 +13,21 @@
   {% include "partials/repo_tabs.html" %}
 
   <p><code>{{ commit.id }}</code></p>
-  <p class="kg-title">{{ message_html|safe }}</p>
+  <p class="kg-title">
+    {{ message_html|safe }}
+    {% if commit.verified %}
+    <details class="kg-verify">
+      <summary class="kg-badge kg-badge--verified">Verified</summary>
+      <div class="kg-verify__panel" role="dialog" aria-label="Commit signature">
+        <p class="kg-verify__fp">
+          <strong>{{ commit.verify_fingerprint_label }}:</strong>
+          <code>{{ commit.verify_fingerprint }}</code>
+        </p>
+        <p class="kg-meta">Verified on {{ commit.verified_at }}</p>
+      </div>
+    </details>
+    {% endif %}
+  </p>
   <p class="kg-meta">{{ commit.author }} &lt;{{ commit.email }}&gt; · {{ commit.time }}</p>
 
   <p><a href="/{{ owner.username }}/{{ repo.name }}/diff/{{ commit.id }}">view full diff</a></p>

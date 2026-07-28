@@ -153,6 +153,10 @@ impl Handler for SshHandler {
     ) -> Result<Auth, Self::Error> {
         let fp = fingerprint_public_key(public_key);
         if let Some(user) = queries::user_by_ssh_fingerprint(&self.state.pool, &fp).await? {
+            if user.is_suspended {
+                tracing::info!("ssh rejected suspended user {}", user.username);
+                return Ok(auth_reject());
+            }
             self.user_id = Some(user.id);
             self.username = Some(user.username);
             return Ok(Auth::Accept);

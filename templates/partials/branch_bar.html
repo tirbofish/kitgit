@@ -12,6 +12,18 @@
         {{ c.short_id }}
       </a>
       <a class="kg-branchbar__msg" href="/{{ owner.username }}/{{ repo.name }}/commit/{{ c.id }}" title="View commit">{{ c.message }}</a>
+      {% if c.verified %}
+      <details class="kg-verify">
+        <summary class="kg-badge kg-badge--verified">Verified</summary>
+        <div class="kg-verify__panel" role="dialog" aria-label="Commit signature">
+          <p class="kg-verify__fp">
+            <strong>{{ c.verify_fingerprint_label }}:</strong>
+            <code>{{ c.verify_fingerprint }}</code>
+          </p>
+          <p class="kg-meta">Verified on {{ c.verified_at }}</p>
+        </div>
+      </details>
+      {% endif %}
     </div>
     {% endif %}
   </div>
