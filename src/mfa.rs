@@ -6,7 +6,7 @@ use data_encoding::BASE32_NOPAD;
 use hmac::{Hmac, Mac};
 use qrcode::render::svg;
 use qrcode::QrCode;
-use rand::RngCore;
+use rand::RngExt;
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -20,7 +20,7 @@ const RECOVERY_CODE_COUNT: usize = 8;
 
 pub fn generate_totp_secret() -> String {
     let mut buf = [0u8; 20];
-    rand::thread_rng().fill_bytes(&mut buf);
+    rand::rng().fill(&mut buf);
     BASE32_NOPAD.encode(&buf)
 }
 
@@ -104,10 +104,10 @@ pub fn verify_totp(secret_base32: &str, code: &str) -> bool {
 
 pub fn generate_recovery_codes() -> Vec<String> {
     let mut out = Vec::with_capacity(RECOVERY_CODE_COUNT);
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     for _ in 0..RECOVERY_CODE_COUNT {
         let mut buf = [0u8; 5];
-        rng.fill_bytes(&mut buf);
+        rng.fill(&mut buf);
         let hex = hex::encode(buf);
         out.push(format!("{}-{}", &hex[..5], &hex[5..]));
     }
