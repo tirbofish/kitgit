@@ -1,0 +1,47 @@
+{% extends "layout.html" %}
+
+{% block title %}notifications — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <div class="kg-actions" style="justify-content: space-between; align-items: baseline;">
+    <h1 class="kg-title">notifications</h1>
+    {% if unread_count > 0 %}
+      <form method="post" action="/notifications/read-all">
+        <button class="kg-btn kg-btn--ghost" type="submit">mark all read</button>
+      </form>
+    {% endif %}
+  </div>
+
+  {% if notifications.is_empty() %}
+    <p class="kg-muted">No notifications yet.</p>
+  {% else %}
+    <ul class="kg-list kg-notif-list">
+      {% for n in notifications %}
+      <li class="{% if n.read_at.is_none() %}kg-notif--unread{% endif %}">
+        <span class="kg-notif-main">
+          {% if n.href.is_empty() %}
+            <strong>{{ n.title }}</strong>
+          {% else %}
+            <a href="{{ n.href }}"><strong>{{ n.title }}</strong></a>
+          {% endif %}
+          {% if !n.body.is_empty() %}
+            <span class="kg-muted">{{ n.body }}</span>
+          {% endif %}
+          <span class="kg-meta">{{ n.created_at }} · {{ n.kind }}</span>
+        </span>
+        <span class="kg-notif-actions">
+          {% if n.read_at.is_none() %}
+            <form method="post" action="/notifications/{{ n.id }}/read">
+              <button class="kg-btn kg-btn--ghost" type="submit">mark read</button>
+            </form>
+          {% else %}
+            <span class="kg-faint">read</span>
+          {% endif %}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+{% endblock %}

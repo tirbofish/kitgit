@@ -1525,6 +1525,60 @@ pub async fn site_banner_json(State(state): State<AppState>) -> impl IntoRespons
     axum::Json(serde_json::json!({ "message": message }))
 }
 
+fn notif_snippet(body: &str, max: usize) -> String {
+    let compact: String = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    if compact.chars().count() <= max {
+        compact
+    } else {
+        let truncated: String = compact.chars().take(max.saturating_sub(1)).collect();
+        format!("{truncated}…")
+    }
+}
+
+pub async fn notifications_list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<impl IntoResponse> {
+    let viewer = require_login(&state.auth, &headers).await?;
+    let notifications = queries::list_notifications(&state.pool, viewer.id, 100).await?;
+    let unread_count = queries::unread_notification_count(&state.pool, viewer.id).await?;
+    Ok(NotificationsTemplate {
+        viewer: Some(viewer),
+        notifications,
+        unread_count,
+    })
+}
+
+pub async fn notifications_unread_json(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<impl IntoResponse> {
+    let viewer = require_login(&state.auth, &headers).await?;
+    let count = queries::unread_notification_count(&state.pool, viewer.id).await?;
+    Ok(axum::Json(serde_json::json!({ "count": count })))
+}
+
+pub async fn notifications_mark_read(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> AppResult<Response> {
+    let viewer = require_login(&state.auth, &headers).await?;
+    queries::mark_notification_read(&state.pool, id, viewer.id)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    Ok(redirect_see_other("/notifications"))
+}
+
+pub async fn notifications_mark_all_read(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<Response> {
+    let viewer = require_login(&state.auth, &headers).await?;
+    queries::mark_all_notifications_read(&state.pool, viewer.id).await?;
+    Ok(redirect_see_other("/notifications"))
+}
+
 // â”€â”€ new repo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 pub async fn new_repo_form(
@@ -2638,7 +2692,7 @@ pub async fn issue_create(
     }
     let body = form.body.unwrap_or_default();
     let number = queries::next_issue_number(&state.pool, repository.id).await?;
-    let issue =
+    let _issue =
         queries::create_issue(&state.pool, repository.id, user.id, number, title, &body).await?;
     queries::record_activity(
         &state.pool,
@@ -2649,10 +2703,18 @@ pub async fn issue_create(
         serde_json::json!({ "number": number }),
     )
     .await?;
-    Ok(redirect_see_other(&format!(
-        "/{owner}/{repo}/issues/{}",
-        issue.number
-    )))
+    let href = format!("/{owner}/{repo}/issues/{number}");
+    queries::notify_repo_watchers(
+        &state.pool,
+        repository.id,
+        user.id,
+        "issue.open",
+        &format!("{} opened issue #{number}: {title}", user.username),
+        &notif_snippet(&body, 160),
+        &href,
+    )
+    .await?;
+    Ok(redirect_see_other(&href))
 }
 
 pub async fn issue_view(
@@ -2732,9 +2794,20 @@ pub async fn issue_comment(
         serde_json::json!({ "number": number }),
     )
     .await?;
-    Ok(redirect_see_other(&format!(
-        "/{owner}/{repo}/issues/{number}"
-    )))
+    let participants = queries::list_issue_participant_ids(&state.pool, issue.id).await?;
+    let href = format!("/{owner}/{repo}/issues/{number}");
+    queries::notify_users(
+        &state.pool,
+        &participants,
+        user.id,
+        "issue.comment",
+        &format!("{} commented on issue #{number}", user.username),
+        &notif_snippet(body, 160),
+        &href,
+        Some(repository.id),
+    )
+    .await?;
+    Ok(redirect_see_other(&href))
 }
 
 pub async fn issue_close(
@@ -2884,7 +2957,7 @@ pub async fn pull_create(
     }
     let body = form.body.unwrap_or_default();
     let number = queries::next_pull_number(&state.pool, repository.id).await?;
-    let pull = queries::create_pull(
+    let _pull = queries::create_pull(
         &state.pool,
         repository.id,
         user.id,
@@ -2904,10 +2977,18 @@ pub async fn pull_create(
         serde_json::json!({ "number": number }),
     )
     .await?;
-    Ok(redirect_see_other(&format!(
-        "/{owner}/{repo}/pulls/{}",
-        pull.number
-    )))
+    let href = format!("/{owner}/{repo}/pulls/{number}");
+    queries::notify_repo_watchers(
+        &state.pool,
+        repository.id,
+        user.id,
+        "pull.open",
+        &format!("{} opened pull #{number}: {title}", user.username),
+        &notif_snippet(&body, 160),
+        &href,
+    )
+    .await?;
+    Ok(redirect_see_other(&href))
 }
 
 #[derive(Deserialize)]
@@ -3032,7 +3113,20 @@ pub async fn pull_comment(
         serde_json::json!({ "number": number }),
     )
     .await?;
-    Ok(redirect_see_other(&format!("/{owner}/{repo}/pulls/{number}")))
+    let participants = queries::list_pull_participant_ids(&state.pool, pull.id).await?;
+    let href = format!("/{owner}/{repo}/pulls/{number}");
+    queries::notify_users(
+        &state.pool,
+        &participants,
+        user.id,
+        "pull.comment",
+        &format!("{} commented on pull #{number}", user.username),
+        &notif_snippet(body, 160),
+        &href,
+        Some(repository.id),
+    )
+    .await?;
+    Ok(redirect_see_other(&href))
 }
 
 #[derive(Deserialize)]
@@ -3316,10 +3410,20 @@ pub async fn release_create(
         serde_json::json!({ "tag": tag }),
     )
     .await?;
-    Ok(redirect_see_other(&format!(
-        "/{owner}/{repo}/releases/{}",
-        release.tag_name
-    )))
+    let href = format!("/{owner}/{repo}/releases/{}", release.tag_name);
+    if !is_draft {
+        queries::notify_repo_watchers(
+            &state.pool,
+            repository.id,
+            user.id,
+            "release.publish",
+            &format!("{} published release {}", user.username, release.tag_name),
+            &title,
+            &href,
+        )
+        .await?;
+    }
+    Ok(redirect_see_other(&href))
 }
 
 pub async fn release_view(
@@ -3441,6 +3545,7 @@ pub async fn release_update(
     let release = queries::get_release(&state.pool, repository.id, &tag)
         .await?
         .ok_or_else(AppError::not_found)?;
+    let was_draft = release.is_draft;
 
     let new_tag = form.tag_name.trim().to_string();
     let title = form.title.trim().to_string();
@@ -3535,10 +3640,20 @@ pub async fn release_update(
         serde_json::json!({ "tag": updated.tag_name }),
     )
     .await?;
-    Ok(redirect_see_other(&format!(
-        "/{owner}/{repo}/releases/{}",
-        updated.tag_name
-    )))
+    let href = format!("/{owner}/{repo}/releases/{}", updated.tag_name);
+    if was_draft && !updated.is_draft {
+        queries::notify_repo_watchers(
+            &state.pool,
+            repository.id,
+            user.id,
+            "release.publish",
+            &format!("{} published release {}", user.username, updated.tag_name),
+            &updated.title,
+            &href,
+        )
+        .await?;
+    }
+    Ok(redirect_see_other(&href))
 }
 
 pub async fn release_delete(
