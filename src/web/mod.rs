@@ -270,6 +270,18 @@ pub fn app_router(state: AppState) -> Router {
             post(routes_extra::branch_rule_delete),
         )
         .route(
+            "/{owner}/{repo}/settings/mirror",
+            post(routes_extra::mirror_save),
+        )
+        .route(
+            "/{owner}/{repo}/settings/mirror/sync",
+            post(routes_extra::mirror_sync),
+        )
+        .route(
+            "/{owner}/{repo}/settings/mirror/delete",
+            post(routes_extra::mirror_delete),
+        )
+        .route(
             "/{owner}/{repo}/settings/danger/archive",
             post(routes::repo_archive),
         )

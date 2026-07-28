@@ -2349,3 +2349,82 @@ pub async fn lfs_object_size(pool: &PgPool, oid: &str) -> Result<Option<i64>> {
         .await?;
     Ok(row.map(|r| r.0))
 }
+
+// ── repo mirrors ─────────────────────────────────────────────────────────────
+
+pub async fn get_repo_mirror(pool: &PgPool, repo_id: Uuid) -> Result<Option<RepoMirror>> {
+    Ok(sqlx::query_as::<_, RepoMirror>(
+        "SELECT * FROM repo_mirrors WHERE repo_id = $1",
+    )
+    .bind(repo_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
+pub async fn upsert_repo_mirror(
+    pool: &PgPool,
+    repo_id: Uuid,
+    remote_url: &str,
+    enabled: bool,
+    created_by: Uuid,
+) -> Result<RepoMirror> {
+    Ok(sqlx::query_as::<_, RepoMirror>(
+        r#"
+        INSERT INTO repo_mirrors (repo_id, remote_url, enabled, created_by)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (repo_id) DO UPDATE SET
+            remote_url = EXCLUDED.remote_url,
+            enabled = EXCLUDED.enabled,
+            updated_at = now()
+        RETURNING *
+        "#,
+    )
+    .bind(repo_id)
+    .bind(remote_url)
+    .bind(enabled)
+    .bind(created_by)
+    .fetch_one(pool)
+    .await?)
+}
+
+pub async fn set_mirror_sync_result(
+    pool: &PgPool,
+    repo_id: Uuid,
+    ok: bool,
+    error: Option<&str>,
+) -> Result<RepoMirror> {
+    if ok {
+        Ok(sqlx::query_as::<_, RepoMirror>(
+            r#"
+            UPDATE repo_mirrors
+            SET last_synced_at = now(), last_error = NULL, updated_at = now()
+            WHERE repo_id = $1
+            RETURNING *
+            "#,
+        )
+        .bind(repo_id)
+        .fetch_one(pool)
+        .await?)
+    } else {
+        Ok(sqlx::query_as::<_, RepoMirror>(
+            r#"
+            UPDATE repo_mirrors
+            SET last_error = $2, updated_at = now()
+            WHERE repo_id = $1
+            RETURNING *
+            "#,
+        )
+        .bind(repo_id)
+        .bind(error)
+        .fetch_one(pool)
+        .await?)
+    }
+}
+
+pub async fn delete_repo_mirror(pool: &PgPool, repo_id: Uuid) -> Result<()> {
+    sqlx::query("DELETE FROM repo_mirrors WHERE repo_id = $1")
+        .bind(repo_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}

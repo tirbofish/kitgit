@@ -101,6 +101,19 @@ pub struct BranchRule {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct RepoMirror {
+    pub id: Uuid,
+    pub repo_id: Uuid,
+    pub remote_url: String,
+    pub enabled: bool,
+    pub last_synced_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    pub created_by: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, FromRow)]
 pub struct CommentReaction {
     pub comment_id: Uuid,

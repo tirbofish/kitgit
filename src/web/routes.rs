@@ -3719,7 +3719,8 @@ pub async fn repo_settings(
 ) -> AppResult<impl IntoResponse> {
     let (repository, owner_user, viewer, access) =
         load_repo_context(&state, &owner, &repo, &headers).await?;
-    if !access.can_admin() {
+    let is_site_admin = viewer.as_ref().map(|u| u.is_site_admin).unwrap_or(false);
+    if !access.can_admin() && !is_site_admin {
         return Err(AppError::forbidden());
     }
     let collaborators = queries::list_collaborators(&state.pool, repository.id).await?;
@@ -3743,7 +3744,7 @@ pub async fn repo_settings(
     }
     let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
     let branch_rules = queries::list_branch_rules(&state.pool, repository.id).await?;
-    let is_site_admin = viewer.as_ref().map(|u| u.is_site_admin).unwrap_or(false);
+    let mirror = queries::get_repo_mirror(&state.pool, repository.id).await?;
     Ok(RepoSettingsTemplate {
         viewer,
         owner: owner_user,
@@ -3754,6 +3755,7 @@ pub async fn repo_settings(
         clone_http,
         clone_ssh,
         branch_rules,
+        mirror,
         is_site_admin,
         error: None,
     })
