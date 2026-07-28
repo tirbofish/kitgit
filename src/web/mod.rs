@@ -111,6 +111,10 @@ pub fn app_router(state: AppState) -> Router {
             post(routes_extra::account_privacy),
         )
         .route(
+            "/settings/account/theme",
+            post(routes_extra::account_theme),
+        )
+        .route(
             "/settings/account/emails",
             post(routes_extra::account_add_email),
         )

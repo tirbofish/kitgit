@@ -2003,6 +2003,19 @@ pub async fn update_privacy(
     .await?)
 }
 
+pub async fn update_user_theme(pool: &PgPool, id: Uuid, theme: &str) -> Result<User> {
+    Ok(sqlx::query_as::<_, User>(
+        r#"
+        UPDATE users SET theme = $2, updated_at = now()
+        WHERE id = $1 RETURNING *
+        "#,
+    )
+    .bind(id)
+    .bind(theme)
+    .fetch_one(pool)
+    .await?)
+}
+
 pub async fn list_user_emails(pool: &PgPool, user_id: Uuid) -> Result<Vec<UserEmail>> {
     Ok(sqlx::query_as::<_, UserEmail>(
         "SELECT * FROM user_emails WHERE user_id = $1 ORDER BY is_primary DESC, email",
@@ -2281,6 +2294,7 @@ pub async fn export_user_data(pool: &PgPool, user_id: Uuid) -> Result<serde_json
             "bio": user.bio,
             "show_email": user.show_email,
             "vigilant_mode": user.vigilant_mode,
+            "theme": user.theme,
             "created_at": user.created_at,
         },
         "emails": emails,

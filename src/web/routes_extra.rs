@@ -665,6 +665,25 @@ pub async fn account_privacy(
 }
 
 #[derive(Deserialize)]
+pub struct ThemeForm {
+    pub theme: String,
+}
+
+pub async fn account_theme(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<ThemeForm>,
+) -> AppResult<Response> {
+    let user = require_login(&state.auth, &headers).await?;
+    let theme = match form.theme.trim() {
+        "light" | "dark" | "system" => form.theme.trim(),
+        _ => return Err(AppError::bad("theme must be light, dark, or system")),
+    };
+    queries::update_user_theme(&state.pool, user.id, theme).await?;
+    Ok(redirect_see_other("/settings/account"))
+}
+
+#[derive(Deserialize)]
 pub struct EmailForm {
     pub email: String,
 }

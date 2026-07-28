@@ -1,7 +1,8 @@
 /* kitgit — brand theme
    ink on paper. no chrome. */
 
-:root {
+:root,
+[data-theme="light"] {
   --kg-bg: #ffffff;
   --kg-bg-raised: #f7f7f7;
   --kg-fg: #0a0a0a;
@@ -34,6 +35,7 @@
   color-scheme: light;
 }
 
+[data-theme="dark"],
 html.kg-dark {
   --kg-bg: #0a0a0a;
   --kg-bg-raised: #141414;
@@ -43,12 +45,33 @@ html.kg-dark {
   --kg-line: #262626;
   --kg-line-strong: #f5f5f5;
   --kg-link: #f5f5f5;
+  --kg-focus: #f5f5f5;
   --kg-danger: #ff4d5a;
   --kg-danger-bg: #2a1214;
   --kg-invert-bg: #f5f5f5;
   --kg-invert-fg: #0a0a0a;
   --kg-invert-muted: #525252;
   color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-theme="system"] {
+    --kg-bg: #0a0a0a;
+    --kg-bg-raised: #141414;
+    --kg-fg: #f5f5f5;
+    --kg-muted: #8a8a8a;
+    --kg-faint: #5c5c5c;
+    --kg-line: #262626;
+    --kg-line-strong: #f5f5f5;
+    --kg-link: #f5f5f5;
+    --kg-focus: #f5f5f5;
+    --kg-danger: #ff4d5a;
+    --kg-danger-bg: #2a1214;
+    --kg-invert-bg: #f5f5f5;
+    --kg-invert-fg: #0a0a0a;
+    --kg-invert-muted: #525252;
+    color-scheme: dark;
+  }
 }
 
 *,
@@ -1316,35 +1339,67 @@ a:hover {
 .kg-codeview .entity.other.attribute-name { color: #8a4b08; }
 .kg-codeview .punctuation { color: #3d3d3d; }
 
-html.kg-dark .kg-codeview .comment,
-html.kg-dark .kg-codeview .punctuation.definition.comment { color: #8a8a8a; }
-html.kg-dark .kg-codeview .string,
-html.kg-dark .kg-codeview .string.quoted,
-html.kg-dark .kg-codeview .constant.character.escape { color: #5ec49a; }
-html.kg-dark .kg-codeview .constant.numeric,
-html.kg-dark .kg-codeview .constant.language,
-html.kg-dark .kg-codeview .constant.character { color: #e0a35a; }
-html.kg-dark .kg-codeview .keyword,
-html.kg-dark .kg-codeview .keyword.control,
-html.kg-dark .kg-codeview .keyword.operator,
-html.kg-dark .kg-codeview .storage,
-html.kg-dark .kg-codeview .storage.type,
-html.kg-dark .kg-codeview .storage.modifier { color: #f5f5f5; font-weight: 700; }
-html.kg-dark .kg-codeview .entity.name.function,
-html.kg-dark .kg-codeview .support.function { color: #7eb0f0; }
-html.kg-dark .kg-codeview .entity.name.class,
-html.kg-dark .kg-codeview .entity.name.struct,
-html.kg-dark .kg-codeview .entity.name.type,
-html.kg-dark .kg-codeview .entity.name.namespace,
-html.kg-dark .kg-codeview .support.type,
-html.kg-dark .kg-codeview .support.class { color: #c9a0ff; }
-html.kg-dark .kg-codeview .variable,
-html.kg-dark .kg-codeview .variable.parameter,
-html.kg-dark .kg-codeview .variable.other { color: #f5f5f5; }
-html.kg-dark .kg-codeview .meta.annotation,
-html.kg-dark .kg-codeview .entity.name.tag { color: #ff8a8a; }
-html.kg-dark .kg-codeview .entity.other.attribute-name { color: #e0a35a; }
-html.kg-dark .kg-codeview .punctuation { color: #b0b0b0; }
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .comment,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .punctuation.definition.comment { color: #8a8a8a; }
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .string,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .string.quoted,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .constant.character.escape { color: #5ec49a; }
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .constant.numeric,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .constant.language,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .constant.character { color: #e0a35a; }
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .keyword,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .keyword.control,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .keyword.operator,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .storage,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .storage.type,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .storage.modifier { color: #f5f5f5; font-weight: 700; }
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .entity.name.function,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .support.function { color: #7eb0f0; }
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .entity.name.class,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .entity.name.struct,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .entity.name.type,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .entity.name.namespace,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .support.type,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .support.class { color: #c9a0ff; }
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .variable,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .variable.parameter,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .variable.other { color: #f5f5f5; }
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .meta.annotation,
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .entity.name.tag { color: #ff8a8a; }
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .entity.other.attribute-name { color: #e0a35a; }
+:is([data-theme="dark"], html.kg-dark) .kg-codeview .punctuation { color: #b0b0b0; }
+
+@media (prefers-color-scheme: dark) {
+  [data-theme="system"] .kg-codeview .comment,
+  [data-theme="system"] .kg-codeview .punctuation.definition.comment { color: #8a8a8a; }
+  [data-theme="system"] .kg-codeview .string,
+  [data-theme="system"] .kg-codeview .string.quoted,
+  [data-theme="system"] .kg-codeview .constant.character.escape { color: #5ec49a; }
+  [data-theme="system"] .kg-codeview .constant.numeric,
+  [data-theme="system"] .kg-codeview .constant.language,
+  [data-theme="system"] .kg-codeview .constant.character { color: #e0a35a; }
+  [data-theme="system"] .kg-codeview .keyword,
+  [data-theme="system"] .kg-codeview .keyword.control,
+  [data-theme="system"] .kg-codeview .keyword.operator,
+  [data-theme="system"] .kg-codeview .storage,
+  [data-theme="system"] .kg-codeview .storage.type,
+  [data-theme="system"] .kg-codeview .storage.modifier { color: #f5f5f5; font-weight: 700; }
+  [data-theme="system"] .kg-codeview .entity.name.function,
+  [data-theme="system"] .kg-codeview .support.function { color: #7eb0f0; }
+  [data-theme="system"] .kg-codeview .entity.name.class,
+  [data-theme="system"] .kg-codeview .entity.name.struct,
+  [data-theme="system"] .kg-codeview .entity.name.type,
+  [data-theme="system"] .kg-codeview .entity.name.namespace,
+  [data-theme="system"] .kg-codeview .support.type,
+  [data-theme="system"] .kg-codeview .support.class { color: #c9a0ff; }
+  [data-theme="system"] .kg-codeview .variable,
+  [data-theme="system"] .kg-codeview .variable.parameter,
+  [data-theme="system"] .kg-codeview .variable.other { color: #f5f5f5; }
+  [data-theme="system"] .kg-codeview .meta.annotation,
+  [data-theme="system"] .kg-codeview .entity.name.tag { color: #ff8a8a; }
+  [data-theme="system"] .kg-codeview .entity.other.attribute-name { color: #e0a35a; }
+  [data-theme="system"] .kg-codeview .punctuation { color: #b0b0b0; }
+}
 
 .kg-readme {
   border: 1px solid var(--kg-line);
