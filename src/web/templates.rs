@@ -302,6 +302,50 @@ pub struct RepoBlobTemplate {
     pub clone_ssh: String,
 }
 
+pub struct BlameLineView {
+    pub line_no: usize,
+    pub content: String,
+    pub commit_id: String,
+    pub short_id: String,
+    pub author: String,
+    pub time_display: String,
+    pub summary: String,
+    pub hunk_start: bool,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "repo_blame.html")]
+pub struct RepoBlameTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub branches: Vec<String>,
+    pub branch: String,
+    pub path: String,
+    pub breadcrumbs: Vec<(String, String)>,
+    pub lines: Vec<BlameLineView>,
+    pub binary: bool,
+    pub clone_http: String,
+    pub clone_ssh: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "repo_history.html")]
+pub struct RepoHistoryTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub branches: Vec<String>,
+    pub branch: String,
+    pub path: String,
+    pub breadcrumbs: Vec<(String, String)>,
+    pub commits: Vec<CommitView>,
+    pub clone_http: String,
+    pub clone_ssh: String,
+}
+
 #[derive(Template, WebTemplate)]
 #[template(path = "repo_commits.html")]
 pub struct RepoCommitsTemplate {
