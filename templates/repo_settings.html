@@ -243,6 +243,47 @@
     </form>
   </div>
 
+  <div class="kg-settings-section">
+    <span class="kg-kicker">deploy keys</span>
+    <p class="kg-muted">Repo-scoped SSH keys for CI and automation. Read-only by default; write access allows push to this repository only.</p>
+    {% if deploy_keys.is_empty() %}
+      <p class="kg-muted">No deploy keys.</p>
+    {% else %}
+      <ul class="kg-list">
+        {% for key in deploy_keys %}
+        <li>
+          <span>
+            <strong>{{ key.name }}</strong>
+            <span class="kg-meta">{{ key.fingerprint }}</span>
+            <span class="kg-badge">{{ key.permission_label() }}</span>
+          </span>
+          <form method="post" action="/{{ owner.username }}/{{ repo.name }}/settings/deploy-keys/{{ key.id }}/delete">
+            <button class="kg-btn kg-btn--danger-ghost" type="submit">delete</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/settings/deploy-keys" style="margin-top:1rem">
+      <label>
+        name
+        <input type="text" name="name" required placeholder="ci" />
+      </label>
+      <label>
+        public key
+        <textarea name="public_key" rows="3" required placeholder="ssh-ed25519 AAAA…"></textarea>
+      </label>
+      <label class="row">
+        <input type="checkbox" name="write_access" />
+        allow write access (push)
+      </label>
+      <div class="kg-actions">
+        <button class="kg-btn" type="submit">add deploy key</button>
+      </div>
+    </form>
+  </div>
+
   {% if access.can_owner() || is_site_admin %}
     <div class="kg-danger-zone">
       <span class="kg-kicker">danger zone</span>

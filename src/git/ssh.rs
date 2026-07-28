@@ -101,28 +101,46 @@ impl Server for SshServer {
             state: self.state.clone(),
             user_id: None,
             username: None,
+            deploy_key: None,
             stdin: None,
             receive_meta: None,
         }
     }
 }
 
+/// Authenticated via a repo-scoped deploy key (not a user key).
+struct DeployKeyAuth {
+    repo_id: Uuid,
+    read_only: bool,
+    created_by: Option<Uuid>,
+    name: String,
+}
+
 struct SshHandler {
     state: AppState,
     user_id: Option<Uuid>,
     username: Option<String>,
+    deploy_key: Option<DeployKeyAuth>,
     stdin: Option<Arc<Mutex<tokio::process::ChildStdin>>>,
     receive_meta: Option<(String, String)>,
 }
 
 impl SshHandler {
+    fn is_authenticated(&self) -> bool {
+        self.user_id.is_some() || self.deploy_key.is_some()
+    }
+
     /// Print `static/text.txt` (with `{user}` substituted) and close — no shell access.
     async fn greet_and_quit(
         &self,
         channel: ChannelId,
         session: &mut Session,
     ) -> Result<(), anyhow::Error> {
-        let username = self.username.as_deref().unwrap_or("git");
+        let username = self
+            .username
+            .as_deref()
+            .or_else(|| self.deploy_key.as_ref().map(|d| d.name.as_str()))
+            .unwrap_or("git");
         let path = self.state.config.static_dir.join("text.txt");
         let mut msg = tokio::fs::read_to_string(&path).await.unwrap_or_else(|_| {
             format!(
@@ -159,6 +177,20 @@ impl Handler for SshHandler {
             }
             self.user_id = Some(user.id);
             self.username = Some(user.username);
+            self.deploy_key = None;
+            return Ok(Auth::Accept);
+        }
+        if let Some(key) =
+            crate::db::deploy_keys::deploy_key_by_fingerprint(&self.state.pool, &fp).await?
+        {
+            self.user_id = None;
+            self.username = Some(format!("deploy:{}", key.name));
+            self.deploy_key = Some(DeployKeyAuth {
+                repo_id: key.repo_id,
+                read_only: key.read_only,
+                created_by: key.created_by,
+                name: key.name,
+            });
             return Ok(Auth::Accept);
         }
         tracing::debug!("ssh publickey rejected fp={fp}");
@@ -205,7 +237,7 @@ impl Handler for SshHandler {
         channel: ChannelId,
         session: &mut Session,
     ) -> Result<(), Self::Error> {
-        if self.user_id.is_none() {
+        if !self.is_authenticated() {
             session.channel_failure(channel)?;
             return Ok(());
         }
@@ -219,10 +251,10 @@ impl Handler for SshHandler {
         session: &mut Session,
     ) -> Result<(), Self::Error> {
         let cmd = String::from_utf8_lossy(data).to_string();
-        let Some(user_id) = self.user_id else {
+        if !self.is_authenticated() {
             session.channel_failure(channel)?;
             return Ok(());
-        };
+        }
 
         let (service, repo_path) = match parse_git_command(&cmd) {
             Ok(v) => v,
@@ -239,11 +271,26 @@ impl Handler for SshHandler {
             session.close(channel)?;
             return Ok(());
         };
-        let access = queries::repo_access(&self.state.pool, &repo, Some(user_id)).await?;
-        let allowed = match service {
-            "git-upload-pack" => access.can_read(),
-            "git-receive-pack" => access.can_write() && !repo.archived,
-            _ => false,
+
+        let allowed = if let Some(dk) = &self.deploy_key {
+            // Deploy keys only unlock the single repo they were added to.
+            if dk.repo_id != repo.id {
+                false
+            } else {
+                match service {
+                    "git-upload-pack" => true,
+                    "git-receive-pack" => !dk.read_only && !repo.archived,
+                    _ => false,
+                }
+            }
+        } else {
+            let user_id = self.user_id.expect("authenticated without deploy key");
+            let access = queries::repo_access(&self.state.pool, &repo, Some(user_id)).await?;
+            match service {
+                "git-upload-pack" => access.can_read(),
+                "git-receive-pack" => access.can_write() && !repo.archived,
+                _ => false,
+            }
         };
         if !allowed {
             session.data(channel, b"access denied\n".as_slice())?;
@@ -311,33 +358,39 @@ impl Handler for SshHandler {
             let mut g = stdin.lock().await;
             let _ = g.shutdown().await;
         }
-        if let (Some(uid), Some((owner, name))) = (self.user_id, self.receive_meta.take()) {
-            if let Ok(Some((repo, _))) = queries::get_repo(&self.state.pool, &owner, &name).await {
-                if let Ok(Some(user)) = queries::get_user_by_id(&self.state.pool, uid).await {
-                    let _ = queries::record_activity(
-                        &self.state.pool,
-                        Some(user.id),
-                        Some(repo.id),
-                        "push",
-                        "pushed",
-                        serde_json::json!({}),
-                    )
-                    .await;
-                    let _ = queries::bump_commit_activity(
-                        &self.state.pool,
-                        user.id,
-                        chrono::Utc::now().date_naive(),
-                        1,
-                    )
-                    .await;
-                    if let Ok(g) = crate::git::open_bare(&self.state.config.repos_dir(), &owner, &name)
-                    {
-                        if let Ok(files) = crate::git::walk_files(&g, &repo.default_branch) {
-                            let stats = crate::git::languages::detect_languages(&files);
-                            let _ = queries::set_language_stats(&self.state.pool, repo.id, stats).await;
-                        }
-                    }
-                }
+        let Some((owner, name)) = self.receive_meta.take() else {
+            return Ok(());
+        };
+        let Ok(Some((repo, _))) = queries::get_repo(&self.state.pool, &owner, &name).await else {
+            return Ok(());
+        };
+        let actor_id = self
+            .user_id
+            .or_else(|| self.deploy_key.as_ref().and_then(|d| d.created_by));
+        if let Some(uid) = actor_id {
+            if let Ok(Some(user)) = queries::get_user_by_id(&self.state.pool, uid).await {
+                let _ = queries::record_activity(
+                    &self.state.pool,
+                    Some(user.id),
+                    Some(repo.id),
+                    "push",
+                    "pushed",
+                    serde_json::json!({}),
+                )
+                .await;
+                let _ = queries::bump_commit_activity(
+                    &self.state.pool,
+                    user.id,
+                    chrono::Utc::now().date_naive(),
+                    1,
+                )
+                .await;
+            }
+        }
+        if let Ok(g) = crate::git::open_bare(&self.state.config.repos_dir(), &owner, &name) {
+            if let Ok(files) = crate::git::walk_files(&g, &repo.default_branch) {
+                let stats = crate::git::languages::detect_languages(&files);
+                let _ = queries::set_language_stats(&self.state.pool, repo.id, stats).await;
             }
         }
         Ok(())

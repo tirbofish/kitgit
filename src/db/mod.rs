@@ -1,5 +1,8 @@
+pub mod deploy_keys;
 pub mod models;
 pub mod queries;
+
+pub use deploy_keys::DeployKey;
 
 use anyhow::{Context, Result};
 use sqlx::postgres::PgPoolOptions;

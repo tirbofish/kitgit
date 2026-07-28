@@ -267,6 +267,14 @@ pub fn app_router(state: AppState) -> Router {
             post(routes::collab_remove),
         )
         .route(
+            "/{owner}/{repo}/settings/deploy-keys",
+            post(routes::deploy_key_add),
+        )
+        .route(
+            "/{owner}/{repo}/settings/deploy-keys/{id}/delete",
+            post(routes::deploy_key_delete),
+        )
+        .route(
             "/{owner}/{repo}/settings/branch-rules",
             post(routes_extra::branch_rule_add),
         )
