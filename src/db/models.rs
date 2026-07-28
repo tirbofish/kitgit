@@ -234,6 +234,30 @@ pub struct CommitDay {
     pub count: i32,
 }
 
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct Webhook {
+    pub id: Uuid,
+    pub repo_id: Uuid,
+    pub url: String,
+    pub secret: String,
+    pub events: Vec<String>,
+    pub active: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct WebhookDelivery {
+    pub id: i64,
+    pub webhook_id: Uuid,
+    pub event: String,
+    pub action: String,
+    pub success: bool,
+    pub status_code: Option<i32>,
+    pub error: Option<String>,
+    pub duration_ms: Option<i32>,
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Access {

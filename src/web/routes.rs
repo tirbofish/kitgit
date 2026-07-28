@@ -2649,6 +2649,20 @@ pub async fn issue_create(
         serde_json::json!({ "number": number }),
     )
     .await?;
+    crate::webhooks::spawn_dispatch(
+        state.pool.clone(),
+        crate::webhooks::EVENT_ISSUES,
+        "opened".into(),
+        repository.clone(),
+        owner.clone(),
+        Some(user.clone()),
+        serde_json::json!({
+            "number": issue.number,
+            "title": issue.title,
+            "body": issue.body,
+            "state": issue.state,
+        }),
+    );
     Ok(redirect_see_other(&format!(
         "/{owner}/{repo}/issues/{}",
         issue.number
@@ -2752,6 +2766,20 @@ pub async fn issue_close(
         return Err(AppError::forbidden());
     }
     queries::set_issue_state(&state.pool, issue.id, "closed").await?;
+    crate::webhooks::spawn_dispatch(
+        state.pool.clone(),
+        crate::webhooks::EVENT_ISSUES,
+        "closed".into(),
+        repository.clone(),
+        owner.clone(),
+        Some(user.clone()),
+        serde_json::json!({
+            "number": issue.number,
+            "title": issue.title,
+            "body": issue.body,
+            "state": "closed",
+        }),
+    );
     Ok(redirect_see_other(&format!(
         "/{owner}/{repo}/issues/{number}"
     )))
@@ -2772,6 +2800,20 @@ pub async fn issue_reopen(
         return Err(AppError::forbidden());
     }
     queries::set_issue_state(&state.pool, issue.id, "open").await?;
+    crate::webhooks::spawn_dispatch(
+        state.pool.clone(),
+        crate::webhooks::EVENT_ISSUES,
+        "reopened".into(),
+        repository.clone(),
+        owner.clone(),
+        Some(user.clone()),
+        serde_json::json!({
+            "number": issue.number,
+            "title": issue.title,
+            "body": issue.body,
+            "state": "open",
+        }),
+    );
     Ok(redirect_see_other(&format!(
         "/{owner}/{repo}/issues/{number}"
     )))
@@ -2904,6 +2946,22 @@ pub async fn pull_create(
         serde_json::json!({ "number": number }),
     )
     .await?;
+    crate::webhooks::spawn_dispatch(
+        state.pool.clone(),
+        crate::webhooks::EVENT_PULL_REQUEST,
+        "opened".into(),
+        repository.clone(),
+        owner.clone(),
+        Some(user.clone()),
+        serde_json::json!({
+            "number": pull.number,
+            "title": pull.title,
+            "body": pull.body,
+            "state": pull.state,
+            "source_branch": pull.source_branch,
+            "target_branch": pull.target_branch,
+        }),
+    );
     Ok(redirect_see_other(&format!(
         "/{owner}/{repo}/pulls/{}",
         pull.number
@@ -3104,6 +3162,23 @@ pub async fn pull_merge(
         serde_json::json!({ "number": number, "commit": merge_commit }),
     )
     .await?;
+    crate::webhooks::spawn_dispatch(
+        state.pool.clone(),
+        crate::webhooks::EVENT_PULL_REQUEST,
+        "merged".into(),
+        repository.clone(),
+        owner.clone(),
+        Some(user.clone()),
+        serde_json::json!({
+            "number": pull.number,
+            "title": pull.title,
+            "body": pull.body,
+            "state": "merged",
+            "source_branch": pull.source_branch,
+            "target_branch": pull.target_branch,
+            "merge_commit": merge_commit,
+        }),
+    );
     Ok(redirect_see_other(&format!("/{owner}/{repo}/pulls/{number}")))
 }
 
@@ -3125,6 +3200,22 @@ pub async fn pull_close(
         return Err(AppError::bad("pull is not open"));
     }
     queries::set_pull_state(&state.pool, pull.id, "closed", None).await?;
+    crate::webhooks::spawn_dispatch(
+        state.pool.clone(),
+        crate::webhooks::EVENT_PULL_REQUEST,
+        "closed".into(),
+        repository.clone(),
+        owner.clone(),
+        Some(user.clone()),
+        serde_json::json!({
+            "number": pull.number,
+            "title": pull.title,
+            "body": pull.body,
+            "state": "closed",
+            "source_branch": pull.source_branch,
+            "target_branch": pull.target_branch,
+        }),
+    );
     Ok(redirect_see_other(&format!("/{owner}/{repo}/pulls/{number}")))
 }
 
@@ -3316,6 +3407,21 @@ pub async fn release_create(
         serde_json::json!({ "tag": tag }),
     )
     .await?;
+    crate::webhooks::spawn_dispatch(
+        state.pool.clone(),
+        crate::webhooks::EVENT_RELEASE,
+        "created".into(),
+        repository.clone(),
+        owner.clone(),
+        Some(user.clone()),
+        serde_json::json!({
+            "tag_name": release.tag_name,
+            "title": release.title,
+            "body": release.body,
+            "is_prerelease": release.is_prerelease,
+            "is_draft": release.is_draft,
+        }),
+    );
     Ok(redirect_see_other(&format!(
         "/{owner}/{repo}/releases/{}",
         release.tag_name
@@ -3535,6 +3641,21 @@ pub async fn release_update(
         serde_json::json!({ "tag": updated.tag_name }),
     )
     .await?;
+    crate::webhooks::spawn_dispatch(
+        state.pool.clone(),
+        crate::webhooks::EVENT_RELEASE,
+        "edited".into(),
+        repository.clone(),
+        owner.clone(),
+        Some(user.clone()),
+        serde_json::json!({
+            "tag_name": updated.tag_name,
+            "title": updated.title,
+            "body": updated.body,
+            "is_prerelease": updated.is_prerelease,
+            "is_draft": updated.is_draft,
+        }),
+    );
     Ok(redirect_see_other(&format!(
         "/{owner}/{repo}/releases/{}",
         updated.tag_name
@@ -3579,6 +3700,21 @@ pub async fn release_delete(
         serde_json::json!({ "tag": tag }),
     )
     .await?;
+    crate::webhooks::spawn_dispatch(
+        state.pool.clone(),
+        crate::webhooks::EVENT_RELEASE,
+        "deleted".into(),
+        repository.clone(),
+        owner.clone(),
+        Some(user.clone()),
+        serde_json::json!({
+            "tag_name": tag,
+            "title": release.title,
+            "body": release.body,
+            "is_prerelease": release.is_prerelease,
+            "is_draft": release.is_draft,
+        }),
+    );
     Ok(redirect_see_other(&format!("/{owner}/{repo}/releases")))
 }
 
@@ -3743,6 +3879,44 @@ pub async fn repo_settings(
     }
     let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
     let branch_rules = queries::list_branch_rules(&state.pool, repository.id).await?;
+    let webhooks: Vec<WebhookView> = queries::list_webhooks(&state.pool, repository.id)
+        .await?
+        .into_iter()
+        .map(|h| WebhookView {
+            id: h.id,
+            url: h.url,
+            has_secret: !h.secret.is_empty(),
+            events_label: if h.events.is_empty() {
+                "(none)".into()
+            } else {
+                h.events.join(", ")
+            },
+            active: h.active,
+            created_at: h.created_at.to_rfc3339(),
+        })
+        .collect();
+    let webhook_deliveries: Vec<WebhookDeliveryView> =
+        queries::list_recent_webhook_deliveries(&state.pool, repository.id, 20)
+            .await?
+            .into_iter()
+            .map(|(d, url)| {
+                let status_label = match (d.success, d.status_code, d.error.as_deref()) {
+                    (true, Some(code), _) => format!("{code}"),
+                    (false, Some(code), Some(err)) => format!("{code}: {err}"),
+                    (false, Some(code), None) => format!("{code}"),
+                    (false, None, Some(err)) => err.to_string(),
+                    _ => "unknown".into(),
+                };
+                WebhookDeliveryView {
+                    event: d.event,
+                    action: d.action,
+                    success: d.success,
+                    status_label,
+                    webhook_url: url,
+                    created_at: d.created_at.to_rfc3339(),
+                }
+            })
+            .collect();
     let is_site_admin = viewer.as_ref().map(|u| u.is_site_admin).unwrap_or(false);
     Ok(RepoSettingsTemplate {
         viewer,
@@ -3754,6 +3928,8 @@ pub async fn repo_settings(
         clone_http,
         clone_ssh,
         branch_rules,
+        webhooks,
+        webhook_deliveries,
         is_site_admin,
         error: None,
     })
@@ -3880,6 +4056,84 @@ pub async fn collab_remove(
         return Err(AppError::forbidden());
     }
     queries::remove_collaborator(&state.pool, repository.id, user_id).await?;
+    Ok(redirect_see_other(&format!("/{owner}/{repo}/settings")))
+}
+
+#[derive(Deserialize)]
+pub struct WebhookAddForm {
+    pub url: String,
+    pub secret: Option<String>,
+    pub event_push: Option<String>,
+    pub event_issues: Option<String>,
+    pub event_pull_request: Option<String>,
+    pub event_release: Option<String>,
+}
+
+pub async fn webhook_add(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+    Form(form): Form<WebhookAddForm>,
+) -> AppResult<Response> {
+    let (repository, _o, _viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    if !access.can_admin() {
+        return Err(AppError::forbidden());
+    }
+    let url = form.url.trim();
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(AppError::bad("url must start with http:// or https://"));
+    }
+    let mut events = Vec::new();
+    if checkbox(&form.event_push) {
+        events.push(crate::webhooks::EVENT_PUSH.to_string());
+    }
+    if checkbox(&form.event_issues) {
+        events.push(crate::webhooks::EVENT_ISSUES.to_string());
+    }
+    if checkbox(&form.event_pull_request) {
+        events.push(crate::webhooks::EVENT_PULL_REQUEST.to_string());
+    }
+    if checkbox(&form.event_release) {
+        events.push(crate::webhooks::EVENT_RELEASE.to_string());
+    }
+    let events = crate::webhooks::normalize_events(&events);
+    if events.is_empty() {
+        return Err(AppError::bad("select at least one event"));
+    }
+    let secret = form.secret.as_deref().unwrap_or("").trim();
+    queries::create_webhook(&state.pool, repository.id, url, secret, &events).await?;
+    Ok(redirect_see_other(&format!("/{owner}/{repo}/settings")))
+}
+
+pub async fn webhook_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo, id)): Path<(String, String, Uuid)>,
+) -> AppResult<Response> {
+    let (repository, _o, _viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    if !access.can_admin() {
+        return Err(AppError::forbidden());
+    }
+    queries::delete_webhook(&state.pool, id, repository.id).await?;
+    Ok(redirect_see_other(&format!("/{owner}/{repo}/settings")))
+}
+
+pub async fn webhook_toggle(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo, id)): Path<(String, String, Uuid)>,
+) -> AppResult<Response> {
+    let (repository, _o, _viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    if !access.can_admin() {
+        return Err(AppError::forbidden());
+    }
+    let hook = queries::get_webhook(&state.pool, id, repository.id)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    queries::set_webhook_active(&state.pool, id, repository.id, !hook.active).await?;
     Ok(redirect_see_other(&format!("/{owner}/{repo}/settings")))
 }
 

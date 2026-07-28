@@ -337,6 +337,18 @@ impl Handler for SshHandler {
                             let _ = queries::set_language_stats(&self.state.pool, repo.id, stats).await;
                         }
                     }
+                    crate::webhooks::spawn_dispatch(
+                        self.state.pool.clone(),
+                        crate::webhooks::EVENT_PUSH,
+                        "push".into(),
+                        repo.clone(),
+                        owner,
+                        Some(user),
+                        serde_json::json!({
+                            "ref": format!("refs/heads/{}", repo.default_branch),
+                            "default_branch": repo.default_branch,
+                        }),
+                    );
                 }
             }
         }
