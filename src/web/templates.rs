@@ -126,12 +126,36 @@ pub struct ExploreRepo {
     pub repo: Repository,
 }
 
+pub struct ExploreIssueHit {
+    pub owner: String,
+    pub repo_name: String,
+    pub number: i32,
+    pub title: String,
+    pub state: String,
+    pub visibility: String,
+    pub updated_at: DateTime<Utc>,
+}
+
+pub struct ExplorePullHit {
+    pub owner: String,
+    pub repo_name: String,
+    pub number: i32,
+    pub title: String,
+    pub state: String,
+    pub visibility: String,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Template, WebTemplate)]
 #[template(path = "explore.html")]
 pub struct ExploreTemplate {
     pub viewer: Option<User>,
-    pub repos: Vec<ExploreRepo>,
     pub query: String,
+    pub search_type: String,
+    pub repos: Vec<ExploreRepo>,
+    pub users: Vec<User>,
+    pub issues: Vec<ExploreIssueHit>,
+    pub pulls: Vec<ExplorePullHit>,
     pub social: SocialMeta,
 }
 
