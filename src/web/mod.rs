@@ -13,7 +13,7 @@ use axum::Router;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::ServeDir;
 
-/// Rewrite `/owner/repo.git` â†’ `/owner/repo` and drop a trailing slash so
+/// Rewrite `/owner/repo.git` ├óΓÇáΓÇÖ `/owner/repo` and drop a trailing slash so
 /// browser pages and git smart-HTTP both work with classic forge URLs.
 fn normalize_repo_path(path: &str) -> String {
     let mut path = path.to_string();
@@ -210,6 +210,14 @@ pub fn app_router(state: AppState) -> Router {
             post(routes::issue_reopen),
         )
         .route(
+            "/{owner}/{repo}/issues/{number}/labels",
+            post(routes::issue_labels_save),
+        )
+        .route(
+            "/{owner}/{repo}/issues/{number}/milestone",
+            post(routes::issue_milestone_save),
+        )
+        .route(
             "/{owner}/{repo}/pulls",
             get(routes::pulls_list).post(routes::pull_create),
         )
@@ -225,6 +233,46 @@ pub fn app_router(state: AppState) -> Router {
         .route(
             "/{owner}/{repo}/pulls/{number}/close",
             post(routes::pull_close),
+        )
+        .route(
+            "/{owner}/{repo}/pulls/{number}/labels",
+            post(routes::pull_labels_save),
+        )
+        .route(
+            "/{owner}/{repo}/pulls/{number}/milestone",
+            post(routes::pull_milestone_save),
+        )
+        .route(
+            "/{owner}/{repo}/labels",
+            get(routes_extra::labels_list).post(routes_extra::label_create),
+        )
+        .route(
+            "/{owner}/{repo}/labels/{id}/update",
+            post(routes_extra::label_update),
+        )
+        .route(
+            "/{owner}/{repo}/labels/{id}/delete",
+            post(routes_extra::label_delete),
+        )
+        .route(
+            "/{owner}/{repo}/milestones",
+            get(routes_extra::milestones_list).post(routes_extra::milestone_create),
+        )
+        .route(
+            "/{owner}/{repo}/milestones/{id}/update",
+            post(routes_extra::milestone_update),
+        )
+        .route(
+            "/{owner}/{repo}/milestones/{id}/close",
+            post(routes_extra::milestone_close),
+        )
+        .route(
+            "/{owner}/{repo}/milestones/{id}/reopen",
+            post(routes_extra::milestone_reopen),
+        )
+        .route(
+            "/{owner}/{repo}/milestones/{id}/delete",
+            post(routes_extra::milestone_delete),
         )
         .route(
             "/{owner}/{repo}/releases",

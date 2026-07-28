@@ -1,14 +1,15 @@
 //! Social, account, branch, raw, and admin helpers.
 
 use super::routes::{
-    avatar_url_for, load_repo_context, redirect_see_other, require_login, AppError, AppResult,
+    avatar_url_for, clone_urls, load_repo_context, redirect_see_other, require_login, AppError,
+    AppResult,
 };
 use crate::auth::{self, clear_session_cookie, hash_token, token_from_headers};
 use crate::db::queries;
 use crate::git;
 use crate::state::AppState;
 use crate::web::templates::*;
-use axum::extract::{Form, Path, State};
+use axum::extract::{Form, Path, Query, State};
 use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE, SET_COOKIE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -383,7 +384,7 @@ pub async fn tag_delete(
     Ok(redirect_see_other(&format!("/{owner}/{repo}/branches")))
 }
 
-// ── account settings ─────────────────────────────────────────────────────────
+// ΓöÇΓöÇ account settings ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 pub async fn account_settings(
     State(state): State<AppState>,
@@ -804,4 +805,302 @@ pub async fn gpg_delete(
 #[allow(dead_code)]
 fn _use_avatar(u: &crate::db::models::User) -> String {
     avatar_url_for(u)
+}
+
+// labels & milestones management handlers for routes_extra.rs
+
+fn normalize_label_color(raw: &str) -> Option<String> {
+    let hex = raw.trim().trim_start_matches('#').to_lowercase();
+    if hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        Some(hex)
+    } else {
+        None
+    }
+}
+
+fn parse_due_on(raw: &Option<String>) -> Option<chrono::NaiveDate> {
+    raw.as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+}
+
+pub async fn labels_list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+) -> AppResult<impl IntoResponse> {
+    let (repository, owner_user, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let labels = queries::list_labels(&state.pool, repository.id).await?;
+    let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
+    Ok(LabelsListTemplate {
+        viewer,
+        owner: owner_user,
+        repo: repository,
+        access,
+        labels,
+        error: None,
+        clone_http,
+        clone_ssh,
+    })
+}
+
+#[derive(Deserialize)]
+pub struct LabelForm {
+    pub name: String,
+    pub color: String,
+    pub description: Option<String>,
+}
+
+pub async fn label_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+    Form(form): Form<LabelForm>,
+) -> AppResult<Response> {
+    let (repository, owner_user, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let user = viewer.ok_or_else(AppError::unauthorized)?;
+    if !access.can_admin() {
+        return Err(AppError::forbidden());
+    }
+    let name = form.name.trim();
+    let color = normalize_label_color(&form.color);
+    let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
+    if name.is_empty() || color.is_none() {
+        let labels = queries::list_labels(&state.pool, repository.id).await?;
+        return Ok(LabelsListTemplate {
+            viewer: Some(user),
+            owner: owner_user,
+            repo: repository,
+            access,
+            labels,
+            error: Some("name and a 6-digit hex color are required".into()),
+            clone_http,
+            clone_ssh,
+        }
+        .into_response());
+    }
+    let desc = form.description.unwrap_or_default();
+    queries::create_label(&state.pool, repository.id, name, &color.unwrap(), desc.trim())
+        .await
+        .map_err(|e| AppError::bad(format!("could not create label: {e}")))?;
+    Ok(redirect_see_other(&format!("/{owner}/{repo}/labels")))
+}
+
+pub async fn label_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo, id)): Path<(String, String, Uuid)>,
+    Form(form): Form<LabelForm>,
+) -> AppResult<Response> {
+    let (repository, _o, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let _user = viewer.ok_or_else(AppError::unauthorized)?;
+    if !access.can_admin() {
+        return Err(AppError::forbidden());
+    }
+    let _ = queries::get_label(&state.pool, repository.id, id)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    let name = form.name.trim();
+    let color = normalize_label_color(&form.color).ok_or_else(|| AppError::bad("bad color"))?;
+    if name.is_empty() {
+        return Err(AppError::bad("name required"));
+    }
+    let desc = form.description.unwrap_or_default();
+    queries::update_label(&state.pool, id, name, &color, desc.trim()).await?;
+    Ok(redirect_see_other(&format!("/{owner}/{repo}/labels")))
+}
+
+pub async fn label_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo, id)): Path<(String, String, Uuid)>,
+) -> AppResult<Response> {
+    let (repository, _o, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let _user = viewer.ok_or_else(AppError::unauthorized)?;
+    if !access.can_admin() {
+        return Err(AppError::forbidden());
+    }
+    let _ = queries::get_label(&state.pool, repository.id, id)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    queries::delete_label(&state.pool, id).await?;
+    Ok(redirect_see_other(&format!("/{owner}/{repo}/labels")))
+}
+
+#[derive(Deserialize)]
+pub struct MilestoneStateFilter {
+    pub state: Option<String>,
+}
+
+pub async fn milestones_list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+    Query(q): Query<MilestoneStateFilter>,
+) -> AppResult<impl IntoResponse> {
+    let (repository, owner_user, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let state_filter = match q.state.as_deref() {
+        Some("closed") => "closed",
+        Some("all") => "all",
+        _ => "open",
+    };
+    let milestones = if state_filter == "all" {
+        queries::list_milestones(&state.pool, repository.id, None).await?
+    } else {
+        queries::list_milestones(&state.pool, repository.id, Some(state_filter)).await?
+    };
+    let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
+    Ok(MilestonesListTemplate {
+        viewer,
+        owner: owner_user,
+        repo: repository,
+        access,
+        milestones,
+        state_filter: state_filter.to_string(),
+        error: None,
+        clone_http,
+        clone_ssh,
+    })
+}
+
+#[derive(Deserialize)]
+pub struct MilestoneForm {
+    pub title: String,
+    pub description: Option<String>,
+    pub due_on: Option<String>,
+}
+
+pub async fn milestone_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+    Form(form): Form<MilestoneForm>,
+) -> AppResult<Response> {
+    let (repository, owner_user, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let user = viewer.ok_or_else(AppError::unauthorized)?;
+    if !access.can_admin() {
+        return Err(AppError::forbidden());
+    }
+    let title = form.title.trim();
+    let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
+    if title.is_empty() {
+        let milestones = queries::list_open_milestones(&state.pool, repository.id).await?;
+        return Ok(MilestonesListTemplate {
+            viewer: Some(user),
+            owner: owner_user,
+            repo: repository,
+            access,
+            milestones,
+            state_filter: "open".into(),
+            error: Some("title required".into()),
+            clone_http,
+            clone_ssh,
+        }
+        .into_response());
+    }
+    let desc = form.description.unwrap_or_default();
+    queries::create_milestone(
+        &state.pool,
+        repository.id,
+        title,
+        desc.trim(),
+        parse_due_on(&form.due_on),
+    )
+    .await
+    .map_err(|e| AppError::bad(format!("could not create milestone: {e}")))?;
+    Ok(redirect_see_other(&format!("/{owner}/{repo}/milestones")))
+}
+
+pub async fn milestone_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo, id)): Path<(String, String, Uuid)>,
+    Form(form): Form<MilestoneForm>,
+) -> AppResult<Response> {
+    let (repository, _o, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let _user = viewer.ok_or_else(AppError::unauthorized)?;
+    if !access.can_admin() {
+        return Err(AppError::forbidden());
+    }
+    let _ = queries::get_milestone(&state.pool, repository.id, id)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    let title = form.title.trim();
+    if title.is_empty() {
+        return Err(AppError::bad("title required"));
+    }
+    let desc = form.description.unwrap_or_default();
+    queries::update_milestone(
+        &state.pool,
+        id,
+        title,
+        desc.trim(),
+        parse_due_on(&form.due_on),
+    )
+    .await?;
+    Ok(redirect_see_other(&format!("/{owner}/{repo}/milestones")))
+}
+
+pub async fn milestone_close(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo, id)): Path<(String, String, Uuid)>,
+) -> AppResult<Response> {
+    let (repository, _o, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let _user = viewer.ok_or_else(AppError::unauthorized)?;
+    if !access.can_admin() {
+        return Err(AppError::forbidden());
+    }
+    let _ = queries::get_milestone(&state.pool, repository.id, id)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    queries::set_milestone_state(&state.pool, id, "closed").await?;
+    Ok(redirect_see_other(&format!(
+        "/{owner}/{repo}/milestones?state=closed"
+    )))
+}
+
+pub async fn milestone_reopen(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo, id)): Path<(String, String, Uuid)>,
+) -> AppResult<Response> {
+    let (repository, _o, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let _user = viewer.ok_or_else(AppError::unauthorized)?;
+    if !access.can_admin() {
+        return Err(AppError::forbidden());
+    }
+    let _ = queries::get_milestone(&state.pool, repository.id, id)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    queries::set_milestone_state(&state.pool, id, "open").await?;
+    Ok(redirect_see_other(&format!("/{owner}/{repo}/milestones")))
+}
+
+pub async fn milestone_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo, id)): Path<(String, String, Uuid)>,
+) -> AppResult<Response> {
+    let (repository, _o, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let _user = viewer.ok_or_else(AppError::unauthorized)?;
+    if !access.can_admin() {
+        return Err(AppError::forbidden());
+    }
+    let _ = queries::get_milestone(&state.pool, repository.id, id)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    queries::delete_milestone(&state.pool, id).await?;
+    Ok(redirect_see_other(&format!("/{owner}/{repo}/milestones")))
 }
