@@ -1,0 +1,39 @@
+{# KaTeX for README / markdown — uses KaTeX's bundled Computer Modern fonts #}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+<style>
+  .katex-display {
+    margin: 1rem 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  /* Size bump only — font-face families come from katex.min.css (Computer Modern). */
+  .kg-readme .katex,
+  .kg-md .katex {
+    font-size: 1.1em;
+  }
+</style>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"
+  onload="window.__kitgitRenderKatex && window.__kitgitRenderKatex()"></script>
+<script>
+window.__kitgitRenderKatex = function () {
+  if (typeof renderMathInElement !== "function") return;
+  var roots = document.querySelectorAll(".kg-readme, .kg-md");
+  if (!roots.length) roots = [document.body];
+  var opts = {
+    delimiters: [
+      { left: "$$", right: "$$", display: true },
+      { left: "\\[", right: "\\]", display: true },
+      { left: "$", right: "$", display: false },
+      { left: "\\(", right: "\\)", display: false }
+    ],
+    throwOnError: false,
+    strict: "ignore",
+    ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code", "option"]
+  };
+  roots.forEach(function (el) { renderMathInElement(el, opts); });
+};
+document.addEventListener("DOMContentLoaded", function () {
+  if (typeof renderMathInElement === "function") window.__kitgitRenderKatex();
+});
+</script>

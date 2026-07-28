@@ -1,0 +1,2 @@
+CREATE DATABASE kitgit;
+CREATE DATABASE authentik;

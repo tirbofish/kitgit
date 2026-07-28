@@ -1,0 +1,78 @@
+{% extends "layout.html" %}
+
+{% block title %}MFA settings — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <span class="kg-kicker">settings</span>
+  <h1 class="kg-title">Two-factor authentication</h1>
+  <nav class="kg-tabs" aria-label="Settings">
+    <a href="/settings/profile">profile</a>
+    <a href="/settings/account">account</a>
+    <a href="/settings/mfa" aria-current="page">mfa</a>
+    <a href="/settings/keys">ssh / gpg</a>
+  </nav>
+
+  {% if let Some(err) = error %}
+    <div class="kg-flash">{{ err }}</div>
+  {% endif %}
+  {% if let Some(msg) = message %}
+    <div class="kg-flash">{{ msg }}</div>
+  {% endif %}
+
+  <div class="kg-settings-section" style="border-top:0;padding-top:0;margin-top:var(--kg-space-4)">
+    {% if enabled %}
+      <p class="kg-muted">Authenticator app MFA is enabled for your account.</p>
+      <p class="kg-meta">{{ recovery_remaining }} recovery code(s) remaining.</p>
+      <form class="kg-form" method="post" action="/settings/mfa/disable" style="margin-top:1rem">
+        <label>
+          confirm with authenticator or recovery code
+          <input type="text" name="code" required autocomplete="one-time-code" />
+        </label>
+        <div class="kg-actions">
+          <button class="kg-btn kg-btn--danger" type="submit">disable MFA</button>
+          <a class="kg-btn kg-btn--ghost" href="/settings/account">back to account</a>
+        </div>
+      </form>
+    {% else if pending %}
+      <p class="kg-muted">Scan this QR code with your authenticator app, then enter a code to confirm.</p>
+      {% if let Some(qr) = qr_data_uri %}
+        <p><img src="{{ qr }}" alt="MFA QR code" width="180" height="180" style="image-rendering:pixelated;background:#fff;padding:0.5rem" /></p>
+      {% endif %}
+      {% if let Some(sec) = secret %}
+        <p class="kg-meta">Or enter this secret manually: <code>{{ sec }}</code></p>
+      {% endif %}
+      <form class="kg-form" method="post" action="/settings/mfa/confirm" style="margin-top:1rem">
+        <label>
+          confirmation code
+          <input type="text" name="code" required autofocus inputmode="numeric" autocomplete="one-time-code" />
+        </label>
+        <div class="kg-actions">
+          <button class="kg-btn" type="submit">confirm and enable</button>
+          <a class="kg-btn kg-btn--ghost" href="/settings/account">cancel</a>
+        </div>
+      </form>
+    {% else %}
+      <p class="kg-muted">Protect your account with a time-based one-time password (TOTP) from an authenticator app.</p>
+      <form method="post" action="/settings/mfa/enroll">
+        <div class="kg-actions">
+          <button class="kg-btn" type="submit">set up authenticator</button>
+          <a class="kg-btn kg-btn--ghost" href="/settings/account">back to account</a>
+        </div>
+      </form>
+    {% endif %}
+  </div>
+
+  {% if let Some(codes) = recovery_codes %}
+  <div class="kg-settings-section">
+    <span class="kg-kicker">recovery codes</span>
+    <p class="kg-muted">Save these codes somewhere safe. Each can be used once if you lose your authenticator. They will not be shown again.</p>
+    <ul class="kg-list">
+      {% for c in codes %}
+      <li><code>{{ c }}</code></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

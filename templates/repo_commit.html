@@ -1,0 +1,22 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ commit.short_id }} · {{ owner.username }}/{{ repo.name }} — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title">
+    <a href="/{{ owner.username }}/{{ repo.name }}">{{ owner.username }}/{{ repo.name }}</a>
+    · commit
+  </h1>
+  {% let tab = "commits" %}
+  {% let archive_ref = commit.id %}
+  {% include "partials/repo_tabs.html" %}
+
+  <p><code>{{ commit.id }}</code></p>
+  <p class="kg-title">{{ message_html|safe }}</p>
+  <p class="kg-meta">{{ commit.author }} &lt;{{ commit.email }}&gt; · {{ commit.time }}</p>
+
+  <p><a href="/{{ owner.username }}/{{ repo.name }}/diff/{{ commit.id }}">view full diff</a></p>
+  {{ diff_html|safe }}
+</section>
+{% endblock %}

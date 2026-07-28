@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}kitgit{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/brand.css" />
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="kg-shell">
+    <header class="kg-bar">
+      <a class="kg-mark" href="/">
+        <span class="kg-mark__glyph" aria-hidden="true">狐</span>
+        <span class="kg-mark__name">kitgit</span>
+      </a>
+      <nav aria-label="Primary">
+        <a href="/explore"><span class="kg-icon" style="--icon:url('/static/icons/code.svg')"></span> explore</a>
+        {% if let Some(u) = viewer %}
+          <a href="/new"><span class="kg-icon" style="--icon:url('/static/icons/plus.svg')"></span> new</a>
+          {% if u.is_site_admin %}<a href="/admin"><span class="kg-icon" style="--icon:url('/static/icons/settings.svg')"></span> admin</a>{% endif %}
+          <a href="/settings/profile"><span class="kg-icon" style="--icon:url('/static/icons/user.svg')"></span> settings</a>
+          <a class="kg-userchip" href="/{{ u.username }}">
+            <img class="kg-avatar kg-avatar--sm" src="/avatars/{{ u.id }}?v={{ u.updated_at.timestamp() }}" alt="" />
+            {{ u.username }}
+          </a>
+          <a href="/auth/logout"><span class="kg-icon" style="--icon:url('/static/icons/log-out.svg')"></span> logout</a>
+        {% else %}
+          <a href="/auth/login"><span class="kg-icon" style="--icon:url('/static/icons/log-in.svg')"></span> login</a>
+          <a href="/auth/signup"><span class="kg-icon" style="--icon:url('/static/icons/plus.svg')"></span> signup</a>
+        {% endif %}
+      </nav>
+    </header>
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+    <footer class="kg-footer">kitgit</footer>
+  </div>
+  <script>
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-copy]');
+    if (!btn) return;
+    const sel = btn.getAttribute('data-copy');
+    const el = sel ? document.querySelector(sel) : null;
+    const text = el ? (el.value || el.textContent) : btn.getAttribute('data-copy-text');
+    if (text) navigator.clipboard.writeText(text.trim());
+  });
+  </script>
+</body>
+</html>

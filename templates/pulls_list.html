@@ -1,0 +1,41 @@
+{% extends "layout.html" %}
+
+{% block title %}pulls · {{ owner.username }}/{{ repo.name }} — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title">
+    <a href="/{{ owner.username }}/{{ repo.name }}">{{ owner.username }}/{{ repo.name }}</a>
+    · pulls
+  </h1>
+  {% let tab = "pulls" %}
+  {% let archive_ref = repo.default_branch %}
+  {% include "partials/repo_tabs.html" %}
+
+  <div class="kg-actions">
+    <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/pulls?state=open"{% if state_filter == "open" %} aria-current="page"{% endif %}>open</a>
+    <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/pulls?state=closed"{% if state_filter == "closed" %} aria-current="page"{% endif %}>closed</a>
+    <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/pulls?state=merged"{% if state_filter == "merged" %} aria-current="page"{% endif %}>merged</a>
+    {% if viewer.is_some() %}
+      <a class="kg-btn" href="/{{ owner.username }}/{{ repo.name }}/pulls/new">new pull</a>
+    {% endif %}
+  </div>
+
+  {% if pulls.is_empty() %}
+    <p class="kg-muted">No {{ state_filter }} pulls.</p>
+  {% else %}
+    <ul class="kg-list">
+      {% for pull in pulls %}
+      <li>
+        <span>
+          <span class="kg-badge {% if pull.state == "open" %}kg-badge--open{% else %}kg-badge--closed{% endif %}">{{ pull.state }}</span>
+          <a href="/{{ owner.username }}/{{ repo.name }}/pulls/{{ pull.number }}">#{{ pull.number }} {{ pull.title }}</a>
+          <span class="kg-meta">{{ pull.source_branch }} → {{ pull.target_branch }}</span>
+        </span>
+        <span class="kg-meta">{{ pull.updated_at }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+{% endblock %}

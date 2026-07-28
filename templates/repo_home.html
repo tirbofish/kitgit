@@ -1,0 +1,124 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ owner.username }}/{{ repo.name }} — kitgit{% endblock %}
+
+{% block head %}
+{% if readme_html.is_some() %}
+{% include "partials/katex.html" %}
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <div class="kg-profile-head">
+    <img class="kg-avatar" src="{{ owner_avatar }}" alt="" />
+    <div class="kg-profile-head__main">
+      <h1 class="kg-title">
+        <a href="/{{ owner.username }}">{{ owner.username }}</a>
+        /
+        <strong>{{ repo.name }}</strong>
+        {% if repo.visibility == "private" %}<span class="kg-badge">private</span>{% endif %}
+        {% if repo.archived %}<span class="kg-badge kg-badge--closed">archived</span>{% endif %}
+        {% if forked_from.is_some() %}<span class="kg-badge">fork</span>{% endif %}
+      </h1>
+      {% if let Some((fo, fn_)) = forked_from %}
+        <p class="kg-meta">forked from <a href="/{{ fo }}/{{ fn_ }}">{{ fo }}/{{ fn_ }}</a></p>
+      {% endif %}
+      {% if !repo.description.is_empty() %}
+        <p class="kg-muted">{{ repo.description }}</p>
+      {% endif %}
+    </div>
+    <div class="kg-social">
+      {% if viewer.is_some() %}
+      <form method="post" action="/{{ owner.username }}/{{ repo.name }}/watch">
+        <button class="kg-btn kg-btn--ghost" type="submit">
+          <span class="kg-icon" style="--icon:url('/static/icons/eye.svg')"></span>
+          {% if watching %}unwatch{% else %}watch{% endif %}
+          <span class="kg-meta">{{ repo.watches_count }}</span>
+        </button>
+      </form>
+      <form method="post" action="/{{ owner.username }}/{{ repo.name }}/fork">
+        <button class="kg-btn kg-btn--ghost" type="submit">
+          <span class="kg-icon" style="--icon:url('/static/icons/git-fork.svg')"></span>
+          fork
+          <span class="kg-meta">{{ repo.forks_count }}</span>
+        </button>
+      </form>
+      <form method="post" action="/{{ owner.username }}/{{ repo.name }}/star">
+        <button class="kg-btn kg-btn--ghost" type="submit">
+          <span class="kg-icon" style="--icon:url('/static/icons/star.svg')"></span>
+          {% if starred %}unstar{% else %}star{% endif %}
+          <span class="kg-meta">{{ repo.stars_count }}</span>
+        </button>
+      </form>
+      {% else %}
+        <span class="kg-meta">
+          <span class="kg-icon" style="--icon:url('/static/icons/eye.svg')"></span> {{ repo.watches_count }}
+          ·
+          <span class="kg-icon" style="--icon:url('/static/icons/git-fork.svg')"></span> {{ repo.forks_count }}
+          ·
+          <span class="kg-icon" style="--icon:url('/static/icons/star.svg')"></span> {{ repo.stars_count }}
+        </span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% let tab = "code" %}
+  {% let archive_ref = current_branch %}
+  {% include "partials/repo_tabs.html" %}
+
+  {% if empty %}
+    <p class="kg-muted">Empty repository. Push to get started.</p>
+    <div class="kg-clone-empty">
+      <code class="kg-clone">git clone {{ clone_http }}</code>
+      <code class="kg-clone">git clone {{ clone_ssh }}</code>
+    </div>
+  {% else %}
+    {% let branch = current_branch %}
+    {% let upload_path = "" %}
+    {% include "partials/branch_bar.html" %}
+
+    {% if !languages.is_empty() %}
+      <div class="kg-langbar" role="img" aria-label="Languages">
+        {% for lang in languages %}
+          <span style="width: {{ lang.percent }}%; background: {{ lang.color }}" title="{{ lang.name }} {{ lang.percent }}%"></span>
+        {% endfor %}
+      </div>
+      <ul class="kg-langlist">
+        {% for lang in languages %}
+          <li>
+            <span class="kg-langdot" style="background: {{ lang.color }}" aria-hidden="true"></span>
+            {{ lang.name }} <span class="kg-meta">{{ lang.percent }}%</span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <ul class="kg-tree">
+      {% for e in entries %}
+      <li>
+        {% if e.is_dir %}
+          <span class="kg-icon" style="--icon:url('/static/icons/folder.svg')"></span>
+          <a href="/{{ owner.username }}/{{ repo.name }}/tree/{{ current_branch }}/{{ e.path }}">{{ e.name }}</a>
+          <span class="kg-meta">{{ e.mode }}</span>
+          <a class="kg-tree__dl kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/archive.zip?ref={{ current_branch }}&path={{ e.path }}" title="Download {{ e.name }} as ZIP">
+            <span class="kg-icon" style="--icon:url('/static/icons/download.svg')"></span>
+            <span class="kg-sr-only">Download</span>
+          </a>
+        {% else %}
+          <span class="kg-icon" style="--icon:url('/static/icons/file.svg')"></span>
+          <a href="/{{ owner.username }}/{{ repo.name }}/blob/{{ current_branch }}/{{ e.path }}">{{ e.name }}</a>
+          <span class="kg-meta">{{ e.mode }}</span>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+
+    {% if let Some(html) = readme_html %}
+      <article class="kg-readme">
+        {{ html|safe }}
+      </article>
+    {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

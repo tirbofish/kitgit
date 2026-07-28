@@ -1,0 +1,88 @@
+{% extends "layout.html" %}
+
+{% block title %}ssh / gpg keys — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <span class="kg-kicker">settings</span>
+  <h1 class="kg-title">SSH &amp; GPG keys</h1>
+  <nav class="kg-tabs" aria-label="Settings">
+    <a href="/settings/profile">profile</a>
+    <a href="/settings/account">account</a>
+    <a href="/settings/mfa">mfa</a>
+    <a href="/settings/keys" aria-current="page">ssh / gpg</a>
+  </nav>
+  {% if let Some(err) = error %}
+    <div class="kg-flash">{{ err }}</div>
+  {% endif %}
+
+  <span class="kg-kicker" style="margin-top:1.5rem">SSH keys</span>
+  {% if !keys.is_empty() %}
+    <ul class="kg-list">
+      {% for key in keys %}
+      <li>
+        <span>
+          <strong>{{ key.name }}</strong>
+          <span class="kg-meta">{{ key.fingerprint }}</span>
+        </span>
+        <form method="post" action="/settings/keys/{{ key.id }}/delete">
+          <button class="kg-btn kg-btn--danger-ghost" type="submit">delete</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="kg-muted">No SSH keys yet.</p>
+  {% endif %}
+
+  <h2 class="kg-title" style="margin-top:2rem">Add SSH key</h2>
+  <form class="kg-form" method="post" action="/settings/keys">
+    <label>
+      name
+      <input type="text" name="name" required />
+    </label>
+    <label>
+      public key
+      <textarea name="public_key" rows="4" required placeholder="ssh-ed25519 AAAA…"></textarea>
+    </label>
+    <div class="kg-actions">
+      <button class="kg-btn" type="submit">add</button>
+    </div>
+  </form>
+
+  <span class="kg-kicker" style="margin-top:2.5rem">GPG keys</span>
+  <p class="kg-muted">Used for commit verification. Vigilant mode flags unsigned commits on your profile.</p>
+  {% if !gpg_keys.is_empty() %}
+    <ul class="kg-list">
+      {% for key in gpg_keys %}
+      <li>
+        <span>
+          <strong>{{ key.name }}</strong>
+          <span class="kg-meta">{{ key.fingerprint }}</span>
+        </span>
+        <form method="post" action="/settings/gpg/{{ key.id }}/delete">
+          <button class="kg-btn kg-btn--danger-ghost" type="submit">delete</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="kg-muted">No GPG keys yet.</p>
+  {% endif %}
+
+  <h2 class="kg-title" style="margin-top:2rem">Add GPG key</h2>
+  <form class="kg-form" method="post" action="/settings/gpg">
+    <label>
+      name
+      <input type="text" name="name" required value="gpg" />
+    </label>
+    <label>
+      public key
+      <textarea name="public_key" rows="6" required placeholder="-----BEGIN PGP PUBLIC KEY BLOCK-----"></textarea>
+    </label>
+    <div class="kg-actions">
+      <button class="kg-btn" type="submit">add</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

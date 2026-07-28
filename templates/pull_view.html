@@ -1,0 +1,160 @@
+{% extends "layout.html" %}
+
+{% block title %}#{{ pull.number }} {{ pull.title }} — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title">
+    <span class="kg-badge {% if pull.state == "open" %}kg-badge--open{% else %}kg-badge--closed{% endif %}">{{ pull.state }}</span>
+    #{{ pull.number }} {{ pull.title }}
+  </h1>
+  <p class="kg-meta">{{ pull.source_branch }} → {{ pull.target_branch }}</p>
+  {% let pr_tab = tab %}
+  {% let tab = "pulls" %}
+  {% let archive_ref = repo.default_branch %}
+  {% include "partials/repo_tabs.html" %}
+
+  <nav class="kg-pr-tabs" aria-label="Pull request">
+    <a href="/{{ owner.username }}/{{ repo.name }}/pulls/{{ pull.number }}?tab=conversation"{% if pr_tab == "conversation" %} aria-current="page"{% endif %}>
+      <span class="kg-icon" style="--icon:url('/static/icons/circle.svg')"></span>
+      conversation
+      <span class="kg-pr-tabs__count">{{ conversation_count }}</span>
+    </a>
+    <a href="/{{ owner.username }}/{{ repo.name }}/pulls/{{ pull.number }}?tab=commits"{% if pr_tab == "commits" %} aria-current="page"{% endif %}>
+      <span class="kg-icon" style="--icon:url('/static/icons/history.svg')"></span>
+      commits
+      <span class="kg-pr-tabs__count">{{ commits.len() }}</span>
+    </a>
+    <a href="/{{ owner.username }}/{{ repo.name }}/pulls/{{ pull.number }}?tab=files"{% if pr_tab == "files" %} aria-current="page"{% endif %}>
+      <span class="kg-icon" style="--icon:url('/static/icons/file.svg')"></span>
+      files
+      <span class="kg-pr-tabs__count">{{ diff_files.len() }}</span>
+    </a>
+  </nav>
+
+  {% if pr_tab == "conversation" %}
+  <article class="kg-comment">
+    <header>
+      <span>
+        <img class="kg-avatar kg-avatar--sm" src="{{ author_avatar }}" alt="" />
+        <a href="/{{ author.username }}">{{ author.username }}</a>
+      </span>
+      <span>{{ pull.created_at }}</span>
+    </header>
+    <div class="kg-readme">{{ body_html|safe }}</div>
+  </article>
+
+  {% for c in comments %}
+  <article class="kg-comment">
+    <header>
+      <span>
+        <img class="kg-avatar kg-avatar--sm" src="{{ c.avatar_url }}" alt="" />
+        <a href="/{{ c.author.username }}">{{ c.author.username }}</a>
+      </span>
+      <span>{{ c.created_at }}</span>
+    </header>
+    <div class="kg-readme">{{ c.body_html|safe }}</div>
+    {% include "partials/reactions.html" %}
+  </article>
+  {% endfor %}
+
+  {% if viewer.is_some() %}
+    <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/pulls/{{ pull.number }}">
+      <label>
+        comment
+        <textarea name="body" rows="4" required></textarea>
+      </label>
+      <div class="kg-actions">
+        <button class="kg-btn" type="submit">comment</button>
+        {% if pull.state == "open" %}
+          <button class="kg-btn kg-btn--ghost" formaction="/{{ owner.username }}/{{ repo.name }}/pulls/{{ pull.number }}/close" formmethod="post" type="submit" formnovalidate>close</button>
+        {% endif %}
+      </div>
+    </form>
+  {% endif %}
+
+  {% if can_merge && !merge_styles.is_empty() %}
+    <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/pulls/{{ pull.number }}/merge">
+      <label>
+        merge style
+        <select name="style">
+          {% for style in merge_styles %}
+            <option value="{{ style }}"{% if style.as_str() == repo.default_merge_style.as_str() %} selected{% endif %}>{{ style }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="kg-actions">
+        <button class="kg-btn" type="submit">merge</button>
+      </div>
+    </form>
+  {% endif %}
+  {% else if pr_tab == "commits" %}
+    {% if commits.is_empty() %}
+      <p class="kg-muted">No commits on this pull request.</p>
+    {% else %}
+      <ul class="kg-list">
+        {% for c in commits %}
+        <li>
+          <span>
+            <a href="/{{ owner.username }}/{{ repo.name }}/commits" title="View commits"><code>{{ c.short_id }}</code></a>
+            <a href="/{{ owner.username }}/{{ repo.name }}/commit/{{ c.id }}">{{ c.message }}</a>
+          </span>
+          <span class="kg-meta">{{ c.author }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  {% else %}
+    {% if diff_files.is_empty() %}
+      <p class="kg-muted">No file changes.</p>
+    {% else %}
+      <div class="kg-pr-files">
+        <aside class="kg-pr-files__nav" aria-label="Changed files">
+          <p class="kg-pr-files__nav-title">{{ diff_files.len() }} files</p>
+          <ul>
+            {% for f in diff_files %}
+            <li>
+              <a href="#{{ f.anchor }}">
+                <span class="kg-pr-files__path">{{ f.path }}</span>
+                <span class="kg-pr-files__stat">
+                  {% if f.binary %}
+                    binary
+                  {% else %}
+                    <span class="kg-pr-files__add">+{{ f.additions }}</span>
+                    <span class="kg-pr-files__del">−{{ f.deletions }}</span>
+                  {% endif %}
+                </span>
+              </a>
+            </li>
+            {% endfor %}
+          </ul>
+        </aside>
+        <div class="kg-pr-files__panels">
+          {% for f in diff_files %}
+          <section class="kg-diff-file" id="{{ f.anchor }}">
+            <header class="kg-diff-file__head">
+              <strong>{{ f.path }}</strong>
+              <span class="kg-meta">
+                {% if f.binary %}
+                  binary
+                {% else %}
+                  <span class="kg-pr-files__add">+{{ f.additions }}</span>
+                  <span class="kg-pr-files__del">−{{ f.deletions }}</span>
+                {% endif %}
+              </span>
+            </header>
+            {{ f.html|safe }}
+            {% if f.truncated %}
+              <p class="kg-diff__truncated">
+                Large diffs are not rendered by default.
+                Showing the first 50 of {{ f.total_lines }} lines.
+              </p>
+            {% endif %}
+          </section>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

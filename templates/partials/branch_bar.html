@@ -1,0 +1,58 @@
+{# Expects: owner, repo, branch, latest_commit: Option<CommitView>, access (optional for upload), upload_path (optional) #}
+<div class="kg-branchbar">
+  <div class="kg-branchbar__left">
+    <a class="kg-branchbar__branch" href="/{{ owner.username }}/{{ repo.name }}/branches">
+      <span class="kg-icon" style="--icon:url('/static/icons/git-branch.svg')"></span>
+      {{ branch }}
+    </a>
+    {% if let Some(c) = latest_commit %}
+    <div class="kg-branchbar__commit">
+      <a class="kg-branchbar__sha" href="/{{ owner.username }}/{{ repo.name }}/commits" title="View commits">
+        <span class="kg-icon" style="--icon:url('/static/icons/git-commit.svg')"></span>
+        {{ c.short_id }}
+      </a>
+      <a class="kg-branchbar__msg" href="/{{ owner.username }}/{{ repo.name }}/commit/{{ c.id }}" title="View commit">{{ c.message }}</a>
+    </div>
+    {% endif %}
+  </div>
+  <div class="kg-branchbar__actions">
+    {% if upload_path != "" %}
+    <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/archive.zip?ref={{ branch }}&path={{ upload_path }}" title="Download this folder as ZIP">
+      <span class="kg-icon" style="--icon:url('/static/icons/download.svg')"></span>
+      download folder
+    </a>
+    {% else %}
+    <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/archive.zip?ref={{ branch }}" title="Download repository as ZIP">
+      <span class="kg-icon" style="--icon:url('/static/icons/download.svg')"></span>
+      download
+    </a>
+    {% endif %}
+    {% if access.can_write() %}
+    <details class="kg-dropdown">
+      <summary class="kg-btn kg-btn--ghost">
+        <span class="kg-icon" style="--icon:url('/static/icons/upload.svg')"></span>
+        upload
+        <span class="kg-icon" style="--icon:url('/static/icons/chevron-down.svg')"></span>
+      </summary>
+      <div class="kg-dropdown__panel kg-dropdown__panel--upload">
+        <form class="kg-upload" method="post" action="/{{ owner.username }}/{{ repo.name }}/upload" enctype="multipart/form-data">
+          <input type="hidden" name="branch" value="{{ branch }}" />
+          <input type="hidden" name="path" value="{{ upload_path }}" />
+          <label class="kg-upload__file">
+            <span class="kg-meta">File</span>
+            <input type="file" name="file" required />
+          </label>
+          <label class="kg-upload__message">
+            <span class="kg-meta">Commit message</span>
+            <input type="text" name="message" placeholder="Commit message" value="Upload file" />
+          </label>
+          <button class="kg-btn" type="submit">
+            <span class="kg-icon" style="--icon:url('/static/icons/upload.svg')"></span>
+            commit file
+          </button>
+        </form>
+      </div>
+    </details>
+    {% endif %}
+  </div>
+</div>

@@ -1,0 +1,112 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: kitgit
+      POSTGRES_PASSWORD: kitgit
+      POSTGRES_DB: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kitgit"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2024.10.4
+    command: server
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-changeme-authentik-secret-key-32chars}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-kitgit-admin-change-me}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@kitgit.local}
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_POSTGRESQL__HOST: postgres
+      AUTHENTIK_POSTGRESQL__USER: kitgit
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: kitgit
+    volumes:
+      - authentik-media:/media
+      - authentik-templates:/templates
+      - ./authentik/blueprints:/blueprints/custom:ro
+    ports:
+      - "9000:9000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2024.10.4
+    command: worker
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-changeme-authentik-secret-key-32chars}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-kitgit-admin-change-me}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@kitgit.local}
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_POSTGRESQL__HOST: postgres
+      AUTHENTIK_POSTGRESQL__USER: kitgit
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: kitgit
+    user: root
+    volumes:
+      - authentik-media:/media
+      - authentik-templates:/templates
+      - ./authentik/blueprints:/blueprints/custom:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  kitgit:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      KITGIT_DATABASE_URL: postgres://kitgit:kitgit@postgres:5432/kitgit
+      KITGIT_DATA_DIR: /data
+      KITGIT_HTTP_BIND: 0.0.0.0:8080
+      KITGIT_SSH_BIND: 0.0.0.0:2222
+      KITGIT_PUBLIC_URL: ${KITGIT_PUBLIC_URL:-http://localhost:8080}
+      KITGIT_SESSION_SECRET: ${KITGIT_SESSION_SECRET:-changeme-kitgit-session-secret-32b}
+      # Public issuer / browser-facing authorize host
+      KITGIT_OIDC_ISSUER: ${KITGIT_OIDC_ISSUER:-http://localhost:9000/application/o/kitgit/}
+      # Internal discovery (Docker DNS) — authorize URL rewritten to KITGIT_OIDC_ISSUER host
+      KITGIT_OIDC_DISCOVERY_URL: ${KITGIT_OIDC_DISCOVERY_URL:-http://authentik-server:9000/application/o/kitgit/}
+      KITGIT_OIDC_CLIENT_ID: ${KITGIT_OIDC_CLIENT_ID:-kitgit}
+      KITGIT_OIDC_CLIENT_SECRET: ${KITGIT_OIDC_CLIENT_SECRET:-changeme-oidc-client-secret}
+      KITGIT_OIDC_REDIRECT_URL: ${KITGIT_OIDC_REDIRECT_URL:-http://localhost:8080/auth/callback}
+      KITGIT_AUTHENTIK_URL: ${KITGIT_AUTHENTIK_URL:-http://authentik-server:9000}
+      KITGIT_AUTHENTIK_API_TOKEN: ${KITGIT_AUTHENTIK_API_TOKEN:-changeme-kitgit-authentik-api-token}
+      AUTHENTIK_TOKEN: ${AUTHENTIK_TOKEN:-changeme-kitgit-authentik-api-token}
+      KITGIT_AUTHENTIK_AUTH_FLOW: ${KITGIT_AUTHENTIK_AUTH_FLOW:-default-authentication-flow}
+      RUST_LOG: info,kitgit=debug
+    volumes:
+      - kitgit-data:/data
+    ports:
+      - "8080:8080"
+      - "2222:2222"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      authentik-server:
+        condition: service_started
+
+volumes:
+  pgdata:
+  authentik-media:
+  authentik-templates:
+  kitgit-data:

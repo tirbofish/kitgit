@@ -1,0 +1,50 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ path }} · {{ owner.username }}/{{ repo.name }} — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title">
+    <a href="/{{ owner.username }}/{{ repo.name }}">{{ owner.username }}/{{ repo.name }}</a>
+  </h1>
+  {% let tab = "code" %}
+  {% let archive_ref = branch %}
+  {% include "partials/repo_tabs.html" %}
+
+  <p class="kg-meta kg-breadcrumbs">
+    <a href="/{{ owner.username }}/{{ repo.name }}/tree/{{ branch }}">{{ branch }}</a>
+    {% for (name, full) in breadcrumbs %}
+      / <a href="/{{ owner.username }}/{{ repo.name }}/tree/{{ branch }}/{{ full }}">{{ name }}</a>
+    {% endfor %}
+  </p>
+
+  {% let upload_path = path %}
+  {% include "partials/branch_bar.html" %}
+
+  <ul class="kg-tree">
+    {% for e in entries %}
+    <li>
+      {% if e.is_dir %}
+        <span class="kg-icon" style="--icon:url('/static/icons/folder.svg')"></span>
+        <a href="/{{ owner.username }}/{{ repo.name }}/tree/{{ branch }}/{{ e.path }}">{{ e.name }}</a>
+        <span class="kg-meta">{{ e.mode }}</span>
+        <a class="kg-tree__dl kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/archive.zip?ref={{ branch }}&path={{ e.path }}" title="Download {{ e.name }} as ZIP">
+          <span class="kg-icon" style="--icon:url('/static/icons/download.svg')"></span>
+          <span class="kg-sr-only">Download</span>
+        </a>
+      {% else %}
+        <span class="kg-icon" style="--icon:url('/static/icons/file.svg')"></span>
+        <a href="/{{ owner.username }}/{{ repo.name }}/blob/{{ branch }}/{{ e.path }}">{{ e.name }}</a>
+        <span class="kg-meta">{{ e.mode }}</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+
+  {% if let Some(html) = readme_html %}
+    <article class="kg-readme">
+      {{ html|safe }}
+    </article>
+  {% endif %}
+</section>
+{% endblock %}

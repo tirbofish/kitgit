@@ -1,0 +1,53 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ path }} · {{ owner.username }}/{{ repo.name }} — kitgit{% endblock %}
+
+{% block head %}
+{% if is_markdown %}
+{% include "partials/katex.html" %}
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title">
+    <a href="/{{ owner.username }}/{{ repo.name }}">{{ owner.username }}/{{ repo.name }}</a>
+  </h1>
+  {% let tab = "code" %}
+  {% let archive_ref = branch %}
+  {% include "partials/repo_tabs.html" %}
+
+  <p class="kg-meta kg-breadcrumbs">
+    <a href="/{{ owner.username }}/{{ repo.name }}/tree/{{ branch }}">{{ branch }}</a>
+    {% for (name, full) in breadcrumbs %}
+      /
+      {% if loop.last %}
+        {{ name }}
+      {% else %}
+        <a href="/{{ owner.username }}/{{ repo.name }}/tree/{{ branch }}/{{ full }}">{{ name }}</a>
+      {% endif %}
+    {% endfor %}
+    · {{ size }} bytes
+  </p>
+
+  <div class="kg-blobbar">
+    <span class="kg-meta">{{ path }}</span>
+    <div class="kg-blobbar__actions">
+      <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/raw/{{ branch }}/{{ path }}">
+        <span class="kg-icon" style="--icon:url('/static/icons/download.svg')"></span>
+        Download raw
+      </a>
+    </div>
+  </div>
+
+  {% if binary %}
+    <p class="kg-muted">Binary file.</p>
+  {% else if let Some(html) = content_html %}
+    {% if is_markdown %}
+      <article class="kg-readme kg-md">{{ html|safe }}</article>
+    {% else %}
+      {{ html|safe }}
+    {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

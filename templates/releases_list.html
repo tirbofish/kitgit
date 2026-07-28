@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+
+{% block title %}releases · {{ owner.username }}/{{ repo.name }} — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title">
+    <a href="/{{ owner.username }}/{{ repo.name }}">{{ owner.username }}/{{ repo.name }}</a>
+    · releases
+  </h1>
+  {% let tab = "releases" %}
+  {% let archive_ref = repo.default_branch %}
+  {% include "partials/repo_tabs.html" %}
+
+  {% if access.can_write() %}
+    <div class="kg-actions">
+      <a class="kg-btn" href="/{{ owner.username }}/{{ repo.name }}/releases/new">
+        <span class="kg-icon" style="--icon:url('/static/icons/plus.svg')"></span>
+        new release
+      </a>
+    </div>
+  {% endif %}
+
+  {% if releases.is_empty() %}
+    <p class="kg-muted">No releases.</p>
+  {% else %}
+    <ul class="kg-release-list">
+      {% for r in releases %}
+      <li class="kg-release-list__item">
+        <div>
+          <a class="kg-release-list__title" href="/{{ owner.username }}/{{ repo.name }}/releases/{{ r.tag_name }}">
+            {{ r.title }}
+          </a>
+          <p class="kg-meta">
+            <code>{{ r.tag_name }}</code>
+            · {{ r.created_at }}
+            {% if r.is_draft %}<span class="kg-badge">draft</span>{% endif %}
+            {% if r.is_prerelease %}<span class="kg-badge kg-badge--pre">pre-release</span>{% endif %}
+          </p>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+{% endblock %}

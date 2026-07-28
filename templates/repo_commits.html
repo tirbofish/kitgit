@@ -1,0 +1,42 @@
+{% extends "layout.html" %}
+
+{% block title %}commits · {{ owner.username }}/{{ repo.name }} — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title">
+    <a href="/{{ owner.username }}/{{ repo.name }}">{{ owner.username }}/{{ repo.name }}</a>
+    · commits
+  </h1>
+  {% let tab = "commits" %}
+  {% let archive_ref = branch %}
+  {% include "partials/repo_tabs.html" %}
+
+  <p class="kg-meta">
+    <a href="/{{ owner.username }}/{{ repo.name }}/branches">
+      <span class="kg-icon" style="--icon:url('/static/icons/git-branch.svg')"></span>
+      {{ branch }}
+    </a>
+  </p>
+
+  {% if commits.is_empty() %}
+    <p class="kg-muted">No commits.</p>
+  {% else %}
+    <ul class="kg-list">
+      {% for c in commits %}
+      <li>
+        <span>
+          <a href="/{{ owner.username }}/{{ repo.name }}/commits" title="View commits">
+            <span class="kg-icon" style="--icon:url('/static/icons/git-commit.svg')"></span>
+            <code>{{ c.short_id }}</code>
+          </a>
+          <a href="/{{ owner.username }}/{{ repo.name }}/commit/{{ c.id }}">{{ c.message }}</a>
+          <span class="kg-muted"> — {{ c.author }}</span>
+        </span>
+        <span class="kg-meta">{{ c.time }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+{% endblock %}

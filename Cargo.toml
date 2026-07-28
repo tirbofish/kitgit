@@ -1,0 +1,55 @@
+[package]
+name = "kitgit"
+version = "0.1.0"
+edition = "2021"
+description = "self-hosted git. templates, not a product page."
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+askama = { version = "0.14", features = ["serde_json"] }
+askama_web = { version = "0.14", features = ["axum-0.8"] }
+async-trait = "0.1"
+axum = { version = "0.8", features = ["multipart", "macros"] }
+axum-extra = { version = "0.10", features = ["cookie", "typed-header"] }
+base64 = "0.22"
+bytes = "1"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive", "env"] }
+data-encoding = "2"
+futures = "0.3"
+git2 = "0.20"
+hex = "0.4"
+hmac = "0.12"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+sha1 = "0.10"
+http-body-util = "0.1"
+mime_guess = "2"
+openidconnect = "4"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html", "simd"] }
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "cookies", "gzip"] }
+russh = "0.50"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "uuid", "migrate"] }
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "html", "regex-fancy"] }
+thiserror = "2"
+time = "0.3"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+toml = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "trace", "limit"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
+urlencoding = "2"
+uuid = { version = "1", features = ["serde", "v4"] }
+dashmap = "6"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

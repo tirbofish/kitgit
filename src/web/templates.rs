@@ -1,0 +1,524 @@
+use crate::db::models::{
+    Access, BranchRule, CommitDay, GpgKey, Issue, PullRequest, Release, Repository, SshKey, User,
+    UserEmail,
+};
+use askama::Template;
+use askama_web::WebTemplate;
+use chrono::{DateTime, Utc};
+use uuid::Uuid;
+
+// ── view models ──────────────────────────────────────────────────────────────
+
+pub struct ActivityRow {
+    pub kind: String,
+    /// Text before an optional issue/PR reference (e.g. `"commented on "`).
+    pub summary: String,
+    /// Linked phrase such as `"issue #1"` / `"pull #2"`.
+    pub ref_label: Option<String>,
+    pub ref_href: Option<String>,
+    pub actor_username: Option<String>,
+    pub actor_avatar: Option<String>,
+    pub repo_owner: Option<String>,
+    pub repo_name: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+pub struct ReactionView {
+    pub emoji: String,
+    pub label: String,
+    pub count: i64,
+    pub mine: bool,
+}
+
+pub struct CommentView {
+    pub id: Uuid,
+    pub author: User,
+    pub avatar_url: String,
+    pub body_html: String,
+    pub created_at: DateTime<Utc>,
+    pub reactions: Vec<ReactionView>,
+}
+
+pub struct DiffFileView {
+    pub path: String,
+    pub anchor: String,
+    pub additions: u32,
+    pub deletions: u32,
+    pub html: String,
+    pub truncated: bool,
+    pub total_lines: usize,
+    pub binary: bool,
+}
+
+pub struct TreeEntryView {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub mode: String,
+}
+
+pub struct CommitView {
+    pub id: String,
+    pub short_id: String,
+    pub message: String,
+    pub author: String,
+    pub email: String,
+    pub time: i64,
+}
+
+pub struct CollaboratorView {
+    pub user: User,
+    pub role: String,
+    pub avatar_url: String,
+}
+
+pub struct LanguageStatView {
+    pub name: String,
+    pub percent: f64,
+    pub color: String,
+}
+
+pub struct BranchRow {
+    pub name: String,
+    pub is_default: bool,
+    pub updated: String,
+    pub ahead: usize,
+    pub behind: usize,
+    pub pull_number: Option<i32>,
+}
+
+pub struct TagRow {
+    pub name: String,
+    pub short_id: String,
+    pub target: String,
+    pub message: String,
+    pub updated: String,
+    pub has_release: bool,
+}
+
+pub struct ReleaseAssetView {
+    pub id: Uuid,
+    pub filename: String,
+    pub size_label: String,
+    pub content_type: String,
+}
+
+// ── page templates ───────────────────────────────────────────────────────────
+
+#[derive(Template, WebTemplate)]
+#[template(path = "home.html")]
+pub struct HomeTemplate {
+    pub viewer: Option<User>,
+    pub motd: String,
+    pub my_repos: Vec<Repository>,
+    pub activities: Vec<ActivityRow>,
+}
+
+pub struct ExploreRepo {
+    pub owner: String,
+    pub repo: Repository,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "explore.html")]
+pub struct ExploreTemplate {
+    pub viewer: Option<User>,
+    pub repos: Vec<ExploreRepo>,
+    pub query: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "login.html")]
+pub struct LoginTemplate {
+    pub viewer: Option<User>,
+    pub error: Option<String>,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "signup.html")]
+pub struct SignupTemplate {
+    pub viewer: Option<User>,
+    pub error: Option<String>,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "error.html")]
+pub struct ErrorTemplate {
+    pub viewer: Option<User>,
+    pub status: u16,
+    pub message: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "new_repo.html")]
+pub struct NewRepoTemplate {
+    pub viewer: Option<User>,
+    pub error: Option<String>,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "profile_settings.html")]
+pub struct ProfileSettingsTemplate {
+    pub viewer: Option<User>,
+    pub user: User,
+    pub avatar_url: String,
+    pub error: Option<String>,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "account_settings.html")]
+pub struct AccountSettingsTemplate {
+    pub viewer: Option<User>,
+    pub user: User,
+    pub emails: Vec<UserEmail>,
+    pub sessions: Vec<SessionView>,
+    pub current_session_id: Option<Uuid>,
+    pub error: Option<String>,
+    pub message: Option<String>,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "mfa_challenge.html")]
+pub struct MfaChallengeTemplate {
+    pub viewer: Option<User>,
+    pub error: Option<String>,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "mfa_settings.html")]
+pub struct MfaSettingsTemplate {
+    pub viewer: Option<User>,
+    pub user: User,
+    pub enabled: bool,
+    pub pending: bool,
+    pub secret: Option<String>,
+    pub qr_data_uri: Option<String>,
+    pub recovery_codes: Option<Vec<String>>,
+    pub recovery_remaining: usize,
+    pub error: Option<String>,
+    pub message: Option<String>,
+}
+
+pub struct SessionView {
+    pub id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub last_seen_at: DateTime<Utc>,
+    pub user_agent: String,
+    pub ip_address: String,
+    pub is_current: bool,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "keys_settings.html")]
+pub struct KeysSettingsTemplate {
+    pub viewer: Option<User>,
+    pub keys: Vec<SshKey>,
+    pub gpg_keys: Vec<GpgKey>,
+    pub error: Option<String>,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "profile.html")]
+pub struct ProfileTemplate {
+    pub viewer: Option<User>,
+    pub profile: User,
+    pub avatar_url: String,
+    pub repos: Vec<Repository>,
+    pub starred: Vec<ExploreRepo>,
+    pub watched_activity: Vec<ActivityRow>,
+    pub graph: Vec<CommitDay>,
+    pub has_activity: bool,
+    pub is_self: bool,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "repo_home.html")]
+pub struct RepoHomeTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub owner_avatar: String,
+    pub clone_http: String,
+    pub clone_ssh: String,
+    pub branches: Vec<String>,
+    pub current_branch: String,
+    pub entries: Vec<TreeEntryView>,
+    pub readme_html: Option<String>,
+    pub languages: Vec<LanguageStatView>,
+    pub empty: bool,
+    pub latest_commit: Option<CommitView>,
+    pub starred: bool,
+    pub watching: bool,
+    pub forked_from: Option<(String, String)>,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "repo_tree.html")]
+pub struct RepoTreeTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub branches: Vec<String>,
+    pub branch: String,
+    pub path: String,
+    pub breadcrumbs: Vec<(String, String)>,
+    pub entries: Vec<TreeEntryView>,
+    pub readme_html: Option<String>,
+    pub latest_commit: Option<CommitView>,
+    pub clone_http: String,
+    pub clone_ssh: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "repo_blob.html")]
+pub struct RepoBlobTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub branches: Vec<String>,
+    pub branch: String,
+    pub path: String,
+    pub breadcrumbs: Vec<(String, String)>,
+    pub binary: bool,
+    pub size: usize,
+    pub content_html: Option<String>,
+    pub is_markdown: bool,
+    pub clone_http: String,
+    pub clone_ssh: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "repo_commits.html")]
+pub struct RepoCommitsTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub branches: Vec<String>,
+    pub branch: String,
+    pub commits: Vec<CommitView>,
+    pub clone_http: String,
+    pub clone_ssh: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "repo_commit.html")]
+pub struct RepoCommitTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub commit: CommitView,
+    pub message_html: String,
+    pub diff_html: String,
+    pub clone_http: String,
+    pub clone_ssh: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "repo_diff.html")]
+pub struct RepoDiffTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub commit: CommitView,
+    pub diff_html: String,
+    pub clone_http: String,
+    pub clone_ssh: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "repo_branches.html")]
+pub struct RepoBranchesTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub branches: Vec<BranchRow>,
+    pub tags: Vec<TagRow>,
+    pub clone_http: String,
+    pub clone_ssh: String,
+    pub error: Option<String>,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "issues_list.html")]
+pub struct IssuesListTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub issues: Vec<Issue>,
+    pub state_filter: String,
+    pub clone_http: String,
+    pub clone_ssh: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "issue_new.html")]
+pub struct IssueNewTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub error: Option<String>,
+    pub clone_http: String,
+    pub clone_ssh: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "issue_view.html")]
+pub struct IssueViewTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub issue: Issue,
+    pub author: User,
+    pub author_avatar: String,
+    pub body_html: String,
+    pub comments: Vec<CommentView>,
+    pub clone_http: String,
+    pub clone_ssh: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "pulls_list.html")]
+pub struct PullsListTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub pulls: Vec<PullRequest>,
+    pub state_filter: String,
+    pub clone_http: String,
+    pub clone_ssh: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "pull_new.html")]
+pub struct PullNewTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub branches: Vec<String>,
+    pub error: Option<String>,
+    pub clone_http: String,
+    pub clone_ssh: String,
+    pub upstream: Option<(String, String)>,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "pull_view.html")]
+pub struct PullViewTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub pull: PullRequest,
+    pub author: User,
+    pub author_avatar: String,
+    pub body_html: String,
+    pub comments: Vec<CommentView>,
+    pub commits: Vec<CommitView>,
+    pub diff_files: Vec<DiffFileView>,
+    pub tab: String,
+    pub conversation_count: usize,
+    pub can_merge: bool,
+    pub merge_styles: Vec<String>,
+    pub clone_http: String,
+    pub clone_ssh: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "releases_list.html")]
+pub struct ReleasesListTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub releases: Vec<Release>,
+    pub clone_http: String,
+    pub clone_ssh: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "release_new.html")]
+pub struct ReleaseNewTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub error: Option<String>,
+    pub clone_http: String,
+    pub clone_ssh: String,
+    pub tag_name: String,
+    pub title: String,
+    pub body: String,
+    pub target: String,
+    pub is_prerelease: bool,
+    pub is_draft: bool,
+    pub branches: Vec<String>,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "release_edit.html")]
+pub struct ReleaseEditTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub release: Release,
+    pub error: Option<String>,
+    pub clone_http: String,
+    pub clone_ssh: String,
+    pub target: String,
+    pub branches: Vec<String>,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "release_view.html")]
+pub struct ReleaseViewTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub release: Release,
+    pub author: User,
+    pub author_avatar: String,
+    pub body_html: String,
+    pub assets: Vec<ReleaseAssetView>,
+    pub tag_short: String,
+    pub tag_target: String,
+    pub clone_http: String,
+    pub clone_ssh: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "repo_settings.html")]
+pub struct RepoSettingsTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub collaborators: Vec<CollaboratorView>,
+    pub branches: Vec<String>,
+    pub branch_rules: Vec<BranchRule>,
+    pub clone_http: String,
+    pub clone_ssh: String,
+    pub is_site_admin: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "admin.html")]
+pub struct AdminTemplate {
+    pub viewer: Option<User>,
+    pub users: Vec<User>,
+    pub motd: String,
+}

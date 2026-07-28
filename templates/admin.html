@@ -1,0 +1,44 @@
+{% extends "layout.html" %}
+{% block title %}admin — kitgit{% endblock %}
+{% block content %}
+<section class="kg-section">
+  <span class="kg-kicker">admin</span>
+  <h1 class="kg-display">site settings</h1>
+
+  <form class="kg-form" method="post" action="/admin/motd" style="margin:1.5rem 0 2.5rem;max-width:36rem">
+    <label>
+      message of the day
+      <textarea name="motd" rows="3" placeholder="Shown on the frontpage">{{ motd }}</textarea>
+    </label>
+    <div class="kg-actions">
+      <button class="kg-btn" type="submit">save MOTD</button>
+    </div>
+  </form>
+
+  <h2 class="kg-title">site admins</h2>
+  <p class="kg-muted">Pick who can open this panel. The first successful login becomes admin automatically if none exist.</p>
+
+  <ul class="kg-list" style="margin-top:1.5rem">
+    {% for u in users %}
+    <li>
+      <div>
+        <a href="/{{ u.username }}">{{ u.username }}</a>
+        <span class="kg-meta">{{ u.email }}{% if u.is_site_admin %} · admin{% endif %}</span>
+      </div>
+      <form method="post" action="/admin/users" style="display:inline">
+        <input type="hidden" name="user_id" value="{{ u.id }}" />
+        {% if u.is_site_admin %}
+          <input type="hidden" name="is_site_admin" value="false" />
+          <button class="kg-btn kg-btn--ghost" type="submit">revoke admin</button>
+        {% else %}
+          <input type="hidden" name="is_site_admin" value="true" />
+          <button class="kg-btn" type="submit">make admin</button>
+        {% endif %}
+      </form>
+    </li>
+    {% else %}
+    <li><span class="kg-muted">no users yet — create an account or log in first.</span></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

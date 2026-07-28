@@ -1,0 +1,38 @@
+{% extends "layout.html" %}
+
+{% block title %}explore — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <span class="kg-kicker">explore</span>
+  <h1 class="kg-display">public repositories</h1>
+  <form class="kg-explore-search" method="get" action="/explore" role="search">
+    <label class="kg-sr-only" for="q">Search</label>
+    <input id="q" type="search" name="q" value="{{ query }}" placeholder="Search name, description, owner…" />
+    <button class="kg-btn" type="submit">search</button>
+  </form>
+
+  {% if repos.is_empty() %}
+    <p class="kg-muted" style="margin-top:1.5rem">
+      {% if !query.is_empty() %}No public repositories match “{{ query }}”.{% else %}No public repositories yet.{% endif %}
+    </p>
+  {% else %}
+    <ul class="kg-list" style="margin-top:1.5rem">
+      {% for item in repos %}
+      <li>
+        <div>
+          <a href="/{{ item.owner }}/{{ item.repo.name }}">
+            <span class="kg-icon" style="--icon:url('/static/icons/code.svg')"></span>
+            {{ item.owner }}/{{ item.repo.name }}
+          </a>
+          {% if !item.repo.description.is_empty() %}
+            <p class="kg-meta" style="margin:0.25rem 0 0">{{ item.repo.description }}</p>
+          {% endif %}
+        </div>
+        <span class="kg-meta">{{ item.repo.updated_at }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+{% endblock %}

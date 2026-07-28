@@ -1,0 +1,121 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ profile.username }} — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <div class="kg-profile-head">
+    <img class="kg-avatar kg-avatar--lg" src="{{ avatar_url }}" alt="" />
+    <div>
+      {% if !profile.display_name.is_empty() %}
+        <h1 class="kg-display">{{ profile.display_name }}</h1>
+        <p class="kg-muted">@{{ profile.username }}</p>
+      {% else %}
+        <h1 class="kg-display">{{ profile.username }}</h1>
+      {% endif %}
+      {% if profile.show_email && !profile.email.is_empty() %}
+        <p class="kg-meta">{{ profile.email }}</p>
+      {% endif %}
+      {% if !profile.bio.is_empty() %}
+        <p>{{ profile.bio }}</p>
+      {% endif %}
+      {% if is_self %}
+        <p><a class="kg-btn kg-btn--ghost" href="/settings/profile">edit profile</a></p>
+      {% endif %}
+    </div>
+  </div>
+
+  <span class="kg-kicker">contributions</span>
+  {% if !has_activity %}
+    <p class="kg-contrib-empty">No recorded git activity yet.</p>
+  {% endif %}
+  <div class="kg-graph" aria-label="Commit graph">
+    {% for day in graph %}
+      {% if day.count == 0 %}
+        <i title="{{ day.day }}: 0"></i>
+      {% else if day.count == 1 %}
+        <i data-n="1" title="{{ day.day }}: {{ day.count }}"></i>
+      {% else if day.count < 4 %}
+        <i data-n="2" title="{{ day.day }}: {{ day.count }}"></i>
+      {% else if day.count < 7 %}
+        <i data-n="3" title="{{ day.day }}: {{ day.count }}"></i>
+      {% else %}
+        <i data-n="4" title="{{ day.day }}: {{ day.count }}"></i>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <span class="kg-kicker">repositories</span>
+  {% if repos.is_empty() %}
+    <p class="kg-muted">No repositories.</p>
+  {% else %}
+    <ul class="kg-list">
+      {% for r in repos %}
+      <li>
+        <span>
+          <a href="/{{ profile.username }}/{{ r.name }}">{{ r.name }}</a>
+          {% if r.visibility == "private" %}<span class="kg-badge">private</span>{% endif %}
+          {% if r.archived %}<span class="kg-badge kg-badge--closed">archived</span>{% endif %}
+          {% if !r.description.is_empty() %}
+            <span class="kg-muted"> — {{ r.description }}</span>
+          {% endif %}
+        </span>
+        <span class="kg-meta">{{ r.updated_at }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <span class="kg-kicker">starred</span>
+  {% if starred.is_empty() %}
+    <p class="kg-muted">No public starred repositories.</p>
+  {% else %}
+    <ul class="kg-list">
+      {% for s in starred %}
+      <li>
+        <span>
+          <a href="/{{ s.owner }}/{{ s.repo.name }}">{{ s.owner }}/{{ s.repo.name }}</a>
+          {% if s.repo.archived %}<span class="kg-badge kg-badge--closed">archived</span>{% endif %}
+          {% if !s.repo.description.is_empty() %}
+            <span class="kg-muted"> — {{ s.repo.description }}</span>
+          {% endif %}
+        </span>
+        <span class="kg-meta">
+          <span class="kg-icon" style="--icon:url('/static/icons/star.svg')"></span>
+          {{ s.repo.stars_count }}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <span class="kg-kicker">watched activity</span>
+  {% if watched_activity.is_empty() %}
+    <p class="kg-muted">No recent activity from watched public repositories.</p>
+  {% else %}
+    <ul class="kg-list">
+      {% for a in watched_activity %}
+      <li>
+        <span class="kg-activity">
+          {% if let Some(avatar) = a.actor_avatar %}
+            <img class="kg-avatar kg-avatar--sm" src="{{ avatar }}" alt="" />
+          {% endif %}
+          {% if let Some(name) = a.actor_username %}
+            <a href="/{{ name }}">{{ name }}</a>
+          {% endif %}
+          <span>
+            {{ a.summary }}{% if let Some(label) = a.ref_label %}{% if let Some(href) = a.ref_href %}<a href="{{ href }}">{{ label }}</a>{% else %}{{ label }}{% endif %}{% endif %}
+          </span>
+          {% if let Some(owner) = a.repo_owner %}
+            {% if let Some(rname) = a.repo_name %}
+              <a href="/{{ owner }}/{{ rname }}">{{ owner }}/{{ rname }}</a>
+            {% endif %}
+          {% endif %}
+        </span>
+        <span class="kg-meta">{{ a.created_at }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+{% endblock %}

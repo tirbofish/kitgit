@@ -1,0 +1,162 @@
+{% extends "layout.html" %}
+
+{% block title %}branches · {{ owner.username }}/{{ repo.name }} — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title">
+    <a href="/{{ owner.username }}/{{ repo.name }}">{{ owner.username }}/{{ repo.name }}</a>
+    · branches &amp; tags
+  </h1>
+  {% let tab = "branches" %}
+  {% let archive_ref = repo.default_branch %}
+  {% include "partials/repo_tabs.html" %}
+
+  {% if let Some(err) = error %}
+    <div class="kg-flash">{{ err }}</div>
+  {% endif %}
+
+  <h2 class="kg-subtitle">Branches</h2>
+  {% if branches.is_empty() %}
+    <p class="kg-muted">No branches.</p>
+  {% else %}
+    <table class="kg-branch-table">
+      <thead>
+        <tr>
+          <th>branch</th>
+          <th>updated</th>
+          <th>vs {{ repo.default_branch }}</th>
+          <th>pull</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in branches %}
+        <tr>
+          <td>
+            <a href="/{{ owner.username }}/{{ repo.name }}/tree/{{ b.name }}">
+              <span class="kg-icon" style="--icon:url('/static/icons/git-branch.svg')"></span>
+              {{ b.name }}
+            </a>
+            {% if b.is_default %}<span class="kg-badge">default</span>{% endif %}
+          </td>
+          <td class="kg-meta">{{ b.updated }}</td>
+          <td class="kg-meta">
+            {% if b.is_default %}
+              —
+            {% else %}
+              {% if b.ahead > 0 %}<span>{{ b.ahead }} ahead</span>{% endif %}
+              {% if b.ahead > 0 && b.behind > 0 %} · {% endif %}
+              {% if b.behind > 0 %}<span>{{ b.behind }} behind</span>{% endif %}
+              {% if b.ahead == 0 && b.behind == 0 %}even{% endif %}
+            {% endif %}
+          </td>
+          <td>
+            {% if let Some(n) = b.pull_number %}
+              <a href="/{{ owner.username }}/{{ repo.name }}/pulls/{{ n }}">#{{ n }}</a>
+            {% else %}
+              <span class="kg-meta">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if access.can_write() && !b.is_default %}
+            <div class="kg-branch-actions">
+              <form method="post" action="/{{ owner.username }}/{{ repo.name }}/branches/{{ b.name }}/rename" style="display:inline-flex;gap:0.35rem">
+                <input type="text" name="new_name" placeholder="rename" required style="width:7rem;font:inherit;border:1px solid var(--kg-line);padding:0.25em 0.4em" />
+                <button class="kg-btn kg-btn--ghost" type="submit" title="Rename">
+                  <span class="kg-icon" style="--icon:url('/static/icons/pencil.svg')"></span>
+                </button>
+              </form>
+              <form method="post" action="/{{ owner.username }}/{{ repo.name }}/branches/{{ b.name }}/delete" style="display:inline" onsubmit="return confirm('Delete branch {{ b.name }}?')">
+                <button class="kg-btn kg-btn--danger-ghost" type="submit" title="Delete">
+                  <span class="kg-icon" style="--icon:url('/static/icons/trash.svg')"></span>
+                </button>
+              </form>
+            </div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  <h2 class="kg-subtitle" style="margin-top:2.5rem">Tags</h2>
+
+  {% if access.can_write() %}
+  <form class="kg-form kg-tag-create" method="post" action="/{{ owner.username }}/{{ repo.name }}/tags">
+    <label>
+      name
+      <input type="text" name="name" required placeholder="v1.0.0" />
+    </label>
+    <label>
+      target
+      <input type="text" name="target" placeholder="{{ repo.default_branch }}" value="{{ repo.default_branch }}" />
+    </label>
+    <label>
+      message
+      <input type="text" name="message" placeholder="optional annotated message" />
+    </label>
+    <div class="kg-actions">
+      <button class="kg-btn" type="submit">
+        <span class="kg-icon" style="--icon:url('/static/icons/plus.svg')"></span>
+        create tag
+      </button>
+    </div>
+  </form>
+  {% endif %}
+
+  {% if tags.is_empty() %}
+    <p class="kg-muted">No tags.</p>
+  {% else %}
+    <table class="kg-branch-table">
+      <thead>
+        <tr>
+          <th>tag</th>
+          <th>commit</th>
+          <th>message</th>
+          <th>updated</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tags %}
+        <tr>
+          <td>
+            <a href="/{{ owner.username }}/{{ repo.name }}/tree/{{ t.name }}">
+              <span class="kg-icon" style="--icon:url('/static/icons/package.svg')"></span>
+              {{ t.name }}
+            </a>
+            {% if t.has_release %}
+              <a class="kg-badge kg-badge--open" href="/{{ owner.username }}/{{ repo.name }}/releases/{{ t.name }}">release</a>
+            {% endif %}
+          </td>
+          <td>
+            <a href="/{{ owner.username }}/{{ repo.name }}/commit/{{ t.target }}"><code>{{ t.short_id }}</code></a>
+          </td>
+          <td class="kg-meta">{{ t.message }}</td>
+          <td class="kg-meta">{{ t.updated }}</td>
+          <td>
+            {% if access.can_write() %}
+            <div class="kg-branch-actions">
+              <form method="post" action="/{{ owner.username }}/{{ repo.name }}/tags/{{ t.name }}/rename" style="display:inline-flex;gap:0.35rem">
+                <input type="text" name="new_name" placeholder="rename" required style="width:7rem;font:inherit;border:1px solid var(--kg-line);padding:0.25em 0.4em" />
+                <button class="kg-btn kg-btn--ghost" type="submit" title="Rename">
+                  <span class="kg-icon" style="--icon:url('/static/icons/pencil.svg')"></span>
+                </button>
+              </form>
+              <form method="post" action="/{{ owner.username }}/{{ repo.name }}/tags/{{ t.name }}/delete" style="display:inline" onsubmit="return confirm('Delete tag {{ t.name }}?')">
+                <button class="kg-btn kg-btn--danger-ghost" type="submit" title="Delete">
+                  <span class="kg-icon" style="--icon:url('/static/icons/trash.svg')"></span>
+                </button>
+              </form>
+            </div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</section>
+{% endblock %}

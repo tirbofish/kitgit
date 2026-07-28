@@ -1,0 +1,33 @@
+{% extends "layout.html" %}
+
+{% block title %}new repository — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <span class="kg-kicker">new</span>
+  <h1 class="kg-title">New repository</h1>
+  {% if let Some(err) = error %}
+    <div class="kg-flash">{{ err }}</div>
+  {% endif %}
+  <form class="kg-form" method="post" action="/new">
+    <label>
+      name
+      <input type="text" name="name" required maxlength="100" pattern="[A-Za-z0-9._-]+" autofocus />
+    </label>
+    <label>
+      description
+      <textarea name="description" rows="3"></textarea>
+    </label>
+    <label>
+      visibility
+      <select name="visibility">
+        <option value="public">public</option>
+        <option value="private">private</option>
+      </select>
+    </label>
+    <div class="kg-actions">
+      <button class="kg-btn" type="submit">create</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

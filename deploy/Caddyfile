@@ -1,0 +1,9 @@
+git.tirbo.fish {
+	encode gzip
+	reverse_proxy kitgit:8080
+}
+
+auth.tirbo.fish {
+	encode gzip
+	reverse_proxy authentik-server:9000
+}

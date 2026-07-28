@@ -1,0 +1,61 @@
+{# Expects: owner, repo, access, tab, clone_http, clone_ssh, archive_ref #}
+<nav class="kg-tabs" aria-label="Repository">
+  <div class="kg-tabs__links">
+    <a href="/{{ owner.username }}/{{ repo.name }}"{% if tab == "code" %} aria-current="page"{% endif %}>
+      <span class="kg-icon" style="--icon:url('/static/icons/code.svg')"></span> code
+    </a>
+    {% if repo.issues_enabled %}
+    <a href="/{{ owner.username }}/{{ repo.name }}/issues"{% if tab == "issues" %} aria-current="page"{% endif %}>
+      <span class="kg-icon" style="--icon:url('/static/icons/circle.svg')"></span> issues
+    </a>
+    {% endif %}
+    {% if repo.pulls_enabled %}
+    <a href="/{{ owner.username }}/{{ repo.name }}/pulls"{% if tab == "pulls" %} aria-current="page"{% endif %}>
+      <span class="kg-icon" style="--icon:url('/static/icons/git-pull-request.svg')"></span> pulls
+    </a>
+    {% endif %}
+    {% if repo.releases_enabled %}
+    <a href="/{{ owner.username }}/{{ repo.name }}/releases"{% if tab == "releases" %} aria-current="page"{% endif %}>
+      <span class="kg-icon" style="--icon:url('/static/icons/package.svg')"></span> releases
+    </a>
+    {% endif %}
+    <a href="/{{ owner.username }}/{{ repo.name }}/commits"{% if tab == "commits" %} aria-current="page"{% endif %}>
+      <span class="kg-icon" style="--icon:url('/static/icons/history.svg')"></span> commits
+    </a>
+    <a href="/{{ owner.username }}/{{ repo.name }}/branches"{% if tab == "branches" %} aria-current="page"{% endif %}>
+      <span class="kg-icon" style="--icon:url('/static/icons/git-branch.svg')"></span> branches
+    </a>
+    {% if access.can_admin() %}
+    <a href="/{{ owner.username }}/{{ repo.name }}/settings"{% if tab == "settings" %} aria-current="page"{% endif %}>
+      <span class="kg-icon" style="--icon:url('/static/icons/settings.svg')"></span> settings
+    </a>
+    {% endif %}
+  </div>
+  <details class="kg-dropdown">
+    <summary class="kg-btn kg-btn--ghost">
+      <span class="kg-icon" style="--icon:url('/static/icons/download.svg')"></span>
+      clone
+      <span class="kg-icon" style="--icon:url('/static/icons/chevron-down.svg')"></span>
+    </summary>
+    <div class="kg-dropdown__panel">
+      <a class="kg-dropdown__item" href="/{{ owner.username }}/{{ repo.name }}/archive.zip?ref={{ archive_ref }}">
+        <span class="kg-icon" style="--icon:url('/static/icons/download.svg')"></span>
+        Download ZIP
+      </a>
+      <div class="kg-clone-row">
+        <label for="clone-http">HTTP</label>
+        <input id="clone-http" type="text" readonly value="{{ clone_http }}" />
+        <button type="button" class="kg-btn kg-btn--ghost" data-copy="#clone-http" title="Copy">
+          <span class="kg-icon" style="--icon:url('/static/icons/copy.svg')"></span>
+        </button>
+      </div>
+      <div class="kg-clone-row">
+        <label for="clone-ssh">SSH</label>
+        <input id="clone-ssh" type="text" readonly value="{{ clone_ssh }}" />
+        <button type="button" class="kg-btn kg-btn--ghost" data-copy="#clone-ssh" title="Copy">
+          <span class="kg-icon" style="--icon:url('/static/icons/copy.svg')"></span>
+        </button>
+      </div>
+    </div>
+  </details>
+</nav>

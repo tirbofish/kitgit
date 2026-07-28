@@ -1,0 +1,11 @@
+/target
+**/*.rs.bk
+.env
+deploy/.env
+deploy/.env.prod
+deploy/.bootstrap-password
+data/
+*.pem
+.DS_Store
+.deploy-staging/
+kitgit-deploy.tar

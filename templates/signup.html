@@ -1,0 +1,40 @@
+{% extends "layout.html" %}
+
+{% block title %}sign up — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section kg-auth">
+  <p class="kg-landing__brand">
+    <span class="kg-mark__glyph" aria-hidden="true">狐</span>
+    <span class="kg-mark__name">kitgit</span>
+  </p>
+  <h1 class="kg-title">sign up</h1>
+  {% if let Some(err) = error %}
+    <div class="kg-flash">{{ err }}</div>
+  {% endif %}
+  <form class="kg-form" method="post" action="/auth/signup" autocomplete="on">
+    <label>
+      username
+      <input type="text" name="username" required autofocus autocomplete="username" pattern="[A-Za-z0-9._\-]+" minlength="2" />
+    </label>
+    <label>
+      display name
+      <input type="text" name="display_name" autocomplete="name" />
+    </label>
+    <label>
+      email
+      <input type="email" name="email" required autocomplete="email" />
+    </label>
+    <label>
+      password
+      <input type="password" name="password" required minlength="8" autocomplete="new-password" />
+    </label>
+    <div class="kg-actions">
+      <button class="kg-btn" type="submit">create account</button>
+    </div>
+  </form>
+  <p class="kg-meta" style="margin-top:1.25rem">
+    Already have an account? <a href="/auth/login">Log in</a>
+  </p>
+</section>
+{% endblock %}

@@ -1,0 +1,153 @@
+{% extends "layout.html" %}
+
+{% block title %}account settings — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <span class="kg-kicker">settings</span>
+  <h1 class="kg-title">Account</h1>
+  <nav class="kg-tabs" aria-label="Settings">
+    <a href="/settings/profile">profile</a>
+    <a href="/settings/account" aria-current="page">account</a>
+    <a href="/settings/mfa">mfa</a>
+    <a href="/settings/keys">ssh / gpg</a>
+  </nav>
+  {% if let Some(err) = error %}
+    <div class="kg-flash">{{ err }}</div>
+  {% endif %}
+  {% if let Some(msg) = message %}
+    <div class="kg-flash">{{ msg }}</div>
+  {% endif %}
+
+  <div class="kg-settings-section" style="margin-top:1rem;border-top:0;padding-top:0">
+    <span class="kg-kicker">username</span>
+    <form class="kg-form" method="post" action="/settings/account/username">
+      <label>
+        username
+        <input type="text" name="username" value="{{ user.username }}" required pattern="[a-z0-9][a-z0-9_-]{0,38}" />
+      </label>
+      <div class="kg-actions">
+        <button class="kg-btn" type="submit">change username</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="kg-settings-section">
+    <span class="kg-kicker">password</span>
+    <p class="kg-muted">Change your account password.</p>
+    <form class="kg-form" method="post" action="/settings/account/password">
+      <label>
+        current password
+        <input type="password" name="current_password" required autocomplete="current-password" />
+      </label>
+      <label>
+        new password
+        <input type="password" name="new_password" required minlength="8" autocomplete="new-password" />
+      </label>
+      <div class="kg-actions">
+        <button class="kg-btn" type="submit">change password</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="kg-settings-section">
+    <span class="kg-kicker">emails</span>
+    <p class="kg-muted">Emails are hidden on your profile unless you opt in. Extra addresses help match commit authors.</p>
+    <form class="kg-form" method="post" action="/settings/account/privacy">
+      <label class="row">
+        <input type="checkbox" name="show_email"{% if user.show_email %} checked{% endif %} />
+        show primary email on profile
+      </label>
+      <label class="row">
+        <input type="checkbox" name="vigilant_mode"{% if user.vigilant_mode %} checked{% endif %} />
+        vigilant mode (flag unsigned commits)
+      </label>
+      <div class="kg-actions">
+        <button class="kg-btn" type="submit">save privacy</button>
+      </div>
+    </form>
+    {% if !emails.is_empty() %}
+    <ul class="kg-list" style="margin-top:1rem">
+      {% for e in emails %}
+      <li>
+        <span>
+          {{ e.email }}
+          {% if e.is_primary %}<span class="kg-badge">primary</span>{% endif %}
+          {% if e.verified %}<span class="kg-badge">verified</span>{% endif %}
+        </span>
+        {% if !e.is_primary %}
+        <form method="post" action="/settings/account/emails/{{ e.id }}/delete">
+          <button class="kg-btn kg-btn--danger-ghost" type="submit">remove</button>
+        </form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    <form class="kg-form" method="post" action="/settings/account/emails" style="margin-top:1rem">
+      <label>
+        add email
+        <input type="email" name="email" required />
+      </label>
+      <div class="kg-actions">
+        <button class="kg-btn" type="submit">add</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="kg-settings-section">
+    <span class="kg-kicker">two-factor authentication</span>
+    <p class="kg-muted">Add an authenticator app for an extra sign-in step.</p>
+    <div class="kg-actions">
+      <a class="kg-btn kg-btn--ghost" href="/settings/mfa">manage MFA</a>
+    </div>
+  </div>
+
+  <div class="kg-settings-section">
+    <span class="kg-kicker">sessions</span>
+    {% if sessions.is_empty() %}
+      <p class="kg-muted">No active sessions.</p>
+    {% else %}
+      <ul class="kg-list">
+        {% for s in sessions %}
+        <li>
+          <span>
+            {% if s.is_current %}<span class="kg-badge">current</span>{% endif %}
+            <span class="kg-meta">{{ s.ip_address }}{% if !s.user_agent.is_empty() %} · {{ s.user_agent }}{% endif %}</span>
+            <span class="kg-meta">last seen {{ s.last_seen_at }}</span>
+          </span>
+          {% if !s.is_current %}
+          <form method="post" action="/settings/account/sessions/{{ s.id }}/revoke">
+            <button class="kg-btn kg-btn--danger-ghost" type="submit">revoke</button>
+          </form>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    <form method="post" action="/settings/account/sessions/revoke-others" style="margin-top:1rem">
+      <button class="kg-btn kg-btn--ghost" type="submit">revoke other sessions</button>
+    </form>
+  </div>
+
+  <div class="kg-settings-section">
+    <span class="kg-kicker">GDPR</span>
+    <div class="kg-actions">
+      <a class="kg-btn kg-btn--ghost" href="/settings/account/export">export my data</a>
+    </div>
+  </div>
+
+  <div class="kg-danger-zone">
+    <span class="kg-kicker">delete account</span>
+    <form class="kg-form" method="post" action="/settings/account/delete">
+      <div class="kg-danger-row">
+        <label>
+          type <code>{{ user.username }}</code> to delete
+          <input type="text" name="confirm" required autocomplete="off" />
+        </label>
+        <button class="kg-btn kg-btn--danger" type="submit">delete account</button>
+      </div>
+    </form>
+  </div>
+</section>
+{% endblock %}

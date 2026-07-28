@@ -1,0 +1,12 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ status }} — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <span class="kg-kicker">error</span>
+  <h1 class="kg-display">{{ status }}</h1>
+  <p class="kg-muted">{{ message }}</p>
+  <p><a class="kg-btn kg-btn--ghost" href="/">home</a></p>
+</section>
+{% endblock %}

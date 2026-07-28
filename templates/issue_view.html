@@ -1,0 +1,57 @@
+{% extends "layout.html" %}
+
+{% block title %}#{{ issue.number }} {{ issue.title }} — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title">
+    <span class="kg-badge {% if issue.state == "open" %}kg-badge--open{% else %}kg-badge--closed{% endif %}">{{ issue.state }}</span>
+    #{{ issue.number }} {{ issue.title }}
+  </h1>
+  {% let tab = "issues" %}
+  {% let archive_ref = repo.default_branch %}
+  {% include "partials/repo_tabs.html" %}
+
+  <article class="kg-comment">
+    <header>
+      <span>
+        <img class="kg-avatar kg-avatar--sm" src="{{ author_avatar }}" alt="" />
+        <a href="/{{ author.username }}">{{ author.username }}</a>
+      </span>
+      <span>{{ issue.created_at }}</span>
+    </header>
+    <div class="kg-readme">{{ body_html|safe }}</div>
+  </article>
+
+  {% for c in comments %}
+  <article class="kg-comment">
+    <header>
+      <span>
+        <img class="kg-avatar kg-avatar--sm" src="{{ c.avatar_url }}" alt="" />
+        <a href="/{{ c.author.username }}">{{ c.author.username }}</a>
+      </span>
+      <span>{{ c.created_at }}</span>
+    </header>
+    <div class="kg-readme">{{ c.body_html|safe }}</div>
+    {% include "partials/reactions.html" %}
+  </article>
+  {% endfor %}
+
+  {% if viewer.is_some() %}
+    <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/issues/{{ issue.number }}">
+      <label>
+        comment
+        <textarea name="body" rows="4" required></textarea>
+      </label>
+      <div class="kg-actions">
+        <button class="kg-btn" type="submit">comment</button>
+        {% if issue.state == "open" %}
+          <button class="kg-btn kg-btn--ghost" formaction="/{{ owner.username }}/{{ repo.name }}/issues/{{ issue.number }}/close" formmethod="post" type="submit" formnovalidate>close</button>
+        {% else %}
+          <button class="kg-btn kg-btn--ghost" formaction="/{{ owner.username }}/{{ repo.name }}/issues/{{ issue.number }}/reopen" formmethod="post" type="submit" formnovalidate>reopen</button>
+        {% endif %}
+      </div>
+    </form>
+  {% endif %}
+</section>
+{% endblock %}

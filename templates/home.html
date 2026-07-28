@@ -1,0 +1,81 @@
+{% extends "layout.html" %}
+
+{% block title %}kitgit{% endblock %}
+
+{% block content %}
+{% if let Some(u) = viewer %}
+<section class="kg-section">
+  <h1 class="kg-display">kitgit</h1>
+  {% if !motd.is_empty() %}
+    <p class="kg-motd">{{ motd }}</p>
+  {% endif %}
+</section>
+
+<section class="kg-section">
+  <span class="kg-kicker">your repositories</span>
+  {% if my_repos.is_empty() %}
+    <p class="kg-muted">No repositories yet. <a href="/new">Create one</a>.</p>
+  {% else %}
+    <ul class="kg-list">
+      {% for r in my_repos %}
+      <li>
+        <a href="/{{ u.username }}/{{ r.name }}">
+          <span class="kg-icon" style="--icon:url('/static/icons/code.svg')"></span>
+          {{ u.username }}/{{ r.name }}
+        </a>
+        <span class="kg-meta">{% if r.visibility == "private" %}private{% else %}public{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+
+<section class="kg-section">
+  <span class="kg-kicker">your activity</span>
+  {% if activities.is_empty() %}
+    <p class="kg-muted">No activity yet.</p>
+  {% else %}
+    <ul class="kg-list">
+      {% for a in activities %}
+      <li>
+        <span class="kg-activity">
+          {% if let Some(avatar) = a.actor_avatar %}
+            <img class="kg-avatar kg-avatar--sm" src="{{ avatar }}" alt="" />
+          {% endif %}
+          {% if let Some(name) = a.actor_username %}
+            <a href="/{{ name }}">{{ name }}</a>
+          {% endif %}
+          <span>
+            {{ a.summary }}{% if let Some(label) = a.ref_label %}{% if let Some(href) = a.ref_href %}<a href="{{ href }}">{{ label }}</a>{% else %}{{ label }}{% endif %}{% endif %}
+          </span>
+          {% if let Some(owner) = a.repo_owner %}
+            {% if let Some(rname) = a.repo_name %}
+              <a href="/{{ owner }}/{{ rname }}">{{ owner }}/{{ rname }}</a>
+            {% endif %}
+          {% endif %}
+        </span>
+        <span class="kg-meta">{{ a.created_at }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+{% else %}
+<section class="kg-landing">
+  <p class="kg-landing__brand">
+    <span class="kg-mark__glyph" aria-hidden="true">狐</span>
+    <span class="kg-mark__name">kitgit</span>
+  </p>
+  {% if !motd.is_empty() %}
+    <p class="kg-motd">{{ motd }}</p>
+  {% else %}
+    <p class="kg-muted">Self-hosted git for your team.</p>
+  {% endif %}
+  <div class="kg-actions kg-landing__cta">
+    <a class="kg-btn" href="/auth/login">log in</a>
+    <a class="kg-btn kg-btn--ghost" href="/auth/signup">sign up</a>
+    <a class="kg-btn kg-btn--ghost" href="/explore">explore</a>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

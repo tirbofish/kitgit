@@ -1,0 +1,29 @@
+{% extends "layout.html" %}
+
+{% block title %}new issue · {{ owner.username }}/{{ repo.name }} — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title">New issue</h1>
+  {% let tab = "issues" %}
+  {% let archive_ref = repo.default_branch %}
+  {% include "partials/repo_tabs.html" %}
+  {% if let Some(err) = error %}
+    <div class="kg-flash">{{ err }}</div>
+  {% endif %}
+  <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/issues">
+    <label>
+      title
+      <input type="text" name="title" required autofocus />
+    </label>
+    <label>
+      body
+      <textarea name="body" rows="8"></textarea>
+    </label>
+    <div class="kg-actions">
+      <button class="kg-btn" type="submit">create</button>
+      <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/issues">cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

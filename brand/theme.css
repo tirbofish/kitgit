@@ -1,0 +1,371 @@
+/* kitgit — brand theme
+   ink on paper. no chrome. */
+
+:root {
+  /* surfaces */
+  --kg-bg: #ffffff;
+  --kg-bg-raised: #f7f7f7;
+  --kg-fg: #0a0a0a;
+  --kg-muted: #6b6b6b;
+  --kg-faint: #a3a3a3;
+  --kg-line: #e5e5e5;
+  --kg-line-strong: #0a0a0a;
+
+  /* interactive */
+  --kg-link: #0a0a0a;
+  --kg-link-hover: #0a0a0a;
+  --kg-focus: #0a0a0a;
+  --kg-danger: #0a0a0a;
+
+  /* invert block (nav, code, CTA) */
+  --kg-invert-bg: #0a0a0a;
+  --kg-invert-fg: #ffffff;
+  --kg-invert-muted: #a3a3a3;
+
+  /* type */
+  --kg-font: "JetBrainsMono Nerd Font", "JetBrainsMono NF", "JetBrains Mono",
+    "FiraCode Nerd Font", "Fira Code", "SauceCodePro Nerd Font",
+    ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  --kg-font-size: 14px;
+  --kg-line-height: 1.55;
+  --kg-tracking-tight: -0.02em;
+  --kg-tracking-brand: 0.08em;
+
+  /* rhythm */
+  --kg-space-1: 0.25rem;
+  --kg-space-2: 0.5rem;
+  --kg-space-3: 1rem;
+  --kg-space-4: 1.5rem;
+  --kg-space-5: 2.5rem;
+  --kg-space-6: 4rem;
+  --kg-max: 75rem;
+  --kg-radius: 0;
+
+  color-scheme: light;
+}
+
+/* optional dark invert — add class="kg-dark" on <html> */
+html.kg-dark {
+  --kg-bg: #0a0a0a;
+  --kg-bg-raised: #141414;
+  --kg-fg: #f5f5f5;
+  --kg-muted: #8a8a8a;
+  --kg-faint: #5c5c5c;
+  --kg-line: #262626;
+  --kg-line-strong: #f5f5f5;
+  --kg-link: #f5f5f5;
+  --kg-invert-bg: #f5f5f5;
+  --kg-invert-fg: #0a0a0a;
+  --kg-invert-muted: #525252;
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: var(--kg-font-size);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--kg-font);
+  font-size: 1rem;
+  line-height: var(--kg-line-height);
+  color: var(--kg-fg);
+  background: var(--kg-bg);
+}
+
+/* —— wordmark —— */
+.kg-mark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.55em;
+  font-family: var(--kg-font);
+  font-weight: 700;
+  font-size: 1.125rem;
+  letter-spacing: var(--kg-tracking-brand);
+  text-transform: lowercase;
+  text-decoration: none;
+  color: var(--kg-fg);
+  line-height: 1;
+}
+
+.kg-mark__glyph {
+  display: inline-block;
+  flex-shrink: 0;
+  align-self: center;
+  font-weight: 700;
+  letter-spacing: 0;
+  font-size: 1.15em;
+  line-height: 1;
+  speak: never;
+}
+
+.kg-mark__name {
+  letter-spacing: var(--kg-tracking-brand);
+}
+
+.kg-mark--hero {
+  font-size: clamp(2.5rem, 8vw, 4.5rem);
+  letter-spacing: 0.06em;
+}
+
+.kg-mark--hero .kg-mark__glyph {
+  font-size: 1.05em;
+}
+
+/* —— type scale —— */
+.kg-display {
+  font-family: var(--kg-font);
+  font-weight: 700;
+  font-size: clamp(1.75rem, 4vw, 2.25rem);
+  line-height: 1.2;
+  letter-spacing: var(--kg-tracking-tight);
+  margin: 0;
+}
+
+.kg-title {
+  font-weight: 700;
+  font-size: 1.125rem;
+  letter-spacing: var(--kg-tracking-tight);
+  margin: 0;
+}
+
+.kg-body {
+  margin: 0;
+  color: var(--kg-fg);
+}
+
+.kg-muted {
+  color: var(--kg-muted);
+}
+
+.kg-faint {
+  color: var(--kg-faint);
+}
+
+.kg-mono {
+  font-family: var(--kg-font);
+}
+
+.kg-kicker {
+  display: block;
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--kg-muted);
+  margin: 0 0 var(--kg-space-3);
+}
+
+/* —— links & controls —— */
+a.kg-link {
+  color: var(--kg-link);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  text-decoration-thickness: 1px;
+}
+
+a.kg-link:hover {
+  text-decoration-thickness: 2px;
+}
+
+.kg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  padding: 0.65em 1.1em;
+  font-family: var(--kg-font);
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  border: 1px solid var(--kg-line-strong);
+  border-radius: var(--kg-radius);
+  background: var(--kg-invert-bg);
+  color: var(--kg-invert-fg);
+  text-decoration: none;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.kg-btn:hover {
+  opacity: 0.85;
+}
+
+.kg-btn:focus-visible {
+  outline: 2px solid var(--kg-focus);
+  outline-offset: 3px;
+}
+
+.kg-btn--ghost {
+  background: transparent;
+  color: var(--kg-fg);
+}
+
+.kg-btn--ghost:hover {
+  opacity: 1;
+  background: var(--kg-bg-raised);
+}
+
+.kg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kg-space-2);
+}
+
+/* —— structure —— */
+.kg-shell {
+  width: min(100% - 2rem, var(--kg-max));
+  margin-inline: auto;
+}
+
+.kg-rule {
+  border: 0;
+  border-top: 1px solid var(--kg-line);
+  margin: var(--kg-space-5) 0;
+}
+
+.kg-rule--strong {
+  border-top-color: var(--kg-line-strong);
+}
+
+.kg-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kg-space-3);
+  padding: var(--kg-space-3) 0;
+  border-bottom: 1px solid var(--kg-line);
+}
+
+.kg-bar nav {
+  display: flex;
+  gap: var(--kg-space-3);
+}
+
+.kg-bar nav a {
+  color: var(--kg-muted);
+  text-decoration: none;
+  font-size: 0.8125rem;
+  letter-spacing: 0.04em;
+}
+
+.kg-bar nav a:hover,
+.kg-bar nav a[aria-current="page"] {
+  color: var(--kg-fg);
+}
+
+.kg-footer {
+  padding: var(--kg-space-4) 0 var(--kg-space-6);
+  color: var(--kg-faint);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+}
+
+/* code / terminal strip */
+.kg-code {
+  display: block;
+  padding: var(--kg-space-3) var(--kg-space-4);
+  background: var(--kg-invert-bg);
+  color: var(--kg-invert-fg);
+  font-family: var(--kg-font);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  overflow-x: auto;
+  border-radius: var(--kg-radius);
+}
+
+.kg-code .cm {
+  color: var(--kg-invert-muted);
+}
+
+.kg-code .ok {
+  color: var(--kg-invert-fg);
+}
+
+/* token swatches (brand preview only) */
+.kg-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  gap: var(--kg-space-2);
+}
+
+.kg-swatch {
+  aspect-ratio: 1;
+  border: 1px solid var(--kg-line);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: var(--kg-space-2);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+}
+
+.kg-swatch span {
+  background: color-mix(in srgb, var(--kg-bg) 85%, transparent);
+  padding: 0.1em 0.25em;
+}
+
+/* motion — presence, not noise */
+@keyframes kg-ink {
+  from {
+    opacity: 0;
+    transform: translateY(0.4rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes kg-caret {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.kg-in {
+  animation: kg-ink 480ms ease both;
+}
+
+.kg-in-2 {
+  animation: kg-ink 480ms ease 80ms both;
+}
+
+.kg-in-3 {
+  animation: kg-ink 480ms ease 160ms both;
+}
+
+.kg-caret::after {
+  content: "█";
+  margin-left: 0.15em;
+  animation: kg-caret 1.1s step-end infinite;
+  font-weight: 400;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kg-in,
+  .kg-in-2,
+  .kg-in-3 {
+    animation: none;
+  }
+
+  .kg-caret::after {
+    animation: none;
+    opacity: 1;
+  }
+}

@@ -1,0 +1,44 @@
+{# Expects: c (CommentView), owner, repo, viewer #}
+{% if viewer.is_some() || !c.reactions.is_empty() %}
+<div class="kg-reactions">
+  {% for r in c.reactions %}
+  <form method="post" action="/{{ owner.username }}/{{ repo.name }}/comments/{{ c.id }}/react" style="display:inline">
+    <input type="hidden" name="emoji" value="{{ r.emoji }}" />
+    <button class="kg-reaction" type="submit" aria-pressed="{% if r.mine %}true{% else %}false{% endif %}" title="{{ r.emoji }}">
+      {{ r.label }} {{ r.count }}
+    </button>
+  </form>
+  {% endfor %}
+  {% if viewer.is_some() %}
+  <details class="kg-dropdown">
+    <summary class="kg-reaction" title="Add reaction">+</summary>
+    <div class="kg-dropdown__panel">
+      <form method="post" action="/{{ owner.username }}/{{ repo.name }}/comments/{{ c.id }}/react">
+        <input type="hidden" name="emoji" value="+1" />
+        <button class="kg-dropdown__item" type="submit">+1</button>
+      </form>
+      <form method="post" action="/{{ owner.username }}/{{ repo.name }}/comments/{{ c.id }}/react">
+        <input type="hidden" name="emoji" value="-1" />
+        <button class="kg-dropdown__item" type="submit">-1</button>
+      </form>
+      <form method="post" action="/{{ owner.username }}/{{ repo.name }}/comments/{{ c.id }}/react">
+        <input type="hidden" name="emoji" value="heart" />
+        <button class="kg-dropdown__item" type="submit">heart</button>
+      </form>
+      <form method="post" action="/{{ owner.username }}/{{ repo.name }}/comments/{{ c.id }}/react">
+        <input type="hidden" name="emoji" value="laugh" />
+        <button class="kg-dropdown__item" type="submit">laugh</button>
+      </form>
+      <form method="post" action="/{{ owner.username }}/{{ repo.name }}/comments/{{ c.id }}/react">
+        <input type="hidden" name="emoji" value="rocket" />
+        <button class="kg-dropdown__item" type="submit">rocket</button>
+      </form>
+      <form method="post" action="/{{ owner.username }}/{{ repo.name }}/comments/{{ c.id }}/react">
+        <input type="hidden" name="emoji" value="eyes" />
+        <button class="kg-dropdown__item" type="submit">eyes</button>
+      </form>
+    </div>
+  </details>
+  {% endif %}
+</div>
+{% endif %}

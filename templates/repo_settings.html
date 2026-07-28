@@ -1,0 +1,224 @@
+{% extends "layout.html" %}
+
+{% block title %}settings · {{ owner.username }}/{{ repo.name }} — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title">
+    <a href="/{{ owner.username }}/{{ repo.name }}">{{ owner.username }}/{{ repo.name }}</a>
+    · settings
+  </h1>
+  {% let tab = "settings" %}
+  {% let archive_ref = repo.default_branch %}
+  {% include "partials/repo_tabs.html" %}
+
+  {% if let Some(err) = error %}
+    <div class="kg-flash">{{ err }}</div>
+  {% endif %}
+
+  <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/settings" style="max-width:none">
+    <div class="kg-settings-section" style="margin-top:1rem;border-top:0;padding-top:0">
+      <span class="kg-kicker">general</span>
+      <label>
+        description
+        <textarea name="description" rows="3">{{ repo.description }}</textarea>
+      </label>
+      <label>
+        visibility
+        <select name="visibility">
+          <option value="public"{% if repo.visibility == "public" %} selected{% endif %}>public</option>
+          <option value="private"{% if repo.visibility == "private" %} selected{% endif %}>private</option>
+        </select>
+      </label>
+      <label>
+        default branch
+        {% if branches.is_empty() %}
+          <input type="text" name="default_branch" value="{{ repo.default_branch }}" required />
+        {% else %}
+          <select name="default_branch">
+            {% for b in branches %}
+              <option value="{{ b }}"{% if b.as_str() == repo.default_branch.as_str() %} selected{% endif %}>{{ b }}</option>
+            {% endfor %}
+          </select>
+        {% endif %}
+      </label>
+    </div>
+
+    <div class="kg-settings-section">
+      <span class="kg-kicker">features</span>
+      <label class="row">
+        <input type="checkbox" name="issues_enabled"{% if repo.issues_enabled %} checked{% endif %} />
+        issues enabled
+      </label>
+      <label class="row">
+        <input type="checkbox" name="pulls_enabled"{% if repo.pulls_enabled %} checked{% endif %} />
+        pulls enabled
+      </label>
+      <label class="row">
+        <input type="checkbox" name="releases_enabled"{% if repo.releases_enabled %} checked{% endif %} />
+        releases enabled
+      </label>
+    </div>
+
+    <div class="kg-settings-section">
+      <span class="kg-kicker">pull requests</span>
+      <label class="row">
+        <input type="checkbox" name="allow_merge"{% if repo.allow_merge %} checked{% endif %} />
+        allow merge
+      </label>
+      <label class="row">
+        <input type="checkbox" name="allow_squash"{% if repo.allow_squash %} checked{% endif %} />
+        allow squash
+      </label>
+      <label class="row">
+        <input type="checkbox" name="allow_rebase"{% if repo.allow_rebase %} checked{% endif %} />
+        allow rebase
+      </label>
+      <label>
+        default merge style
+        <select name="default_merge_style">
+          <option value="merge"{% if repo.default_merge_style == "merge" %} selected{% endif %}>merge</option>
+          <option value="squash"{% if repo.default_merge_style == "squash" %} selected{% endif %}>squash</option>
+          <option value="rebase"{% if repo.default_merge_style == "rebase" %} selected{% endif %}>rebase</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="kg-settings-section">
+      <span class="kg-kicker">branch protection</span>
+      <label class="row">
+        <input type="checkbox" name="protect_default_branch"{% if repo.protect_default_branch %} checked{% endif %} />
+        protect default branch
+      </label>
+      <label class="row">
+        <input type="checkbox" name="protect_block_force_push"{% if repo.protect_block_force_push %} checked{% endif %} />
+        block force push
+      </label>
+      <div class="kg-actions">
+        <button class="kg-btn" type="submit">save settings</button>
+      </div>
+    </div>
+  </form>
+
+  <div class="kg-settings-section">
+    <span class="kg-kicker">branch rules</span>
+    <p class="kg-muted">Pattern-based rules (e.g. <code>main</code>, <code>release/*</code>).</p>
+    {% if branch_rules.is_empty() %}
+      <p class="kg-muted">No branch rules yet.</p>
+    {% else %}
+      <ul class="kg-list">
+        {% for rule in branch_rules %}
+        <li>
+          <span>
+            <code>{{ rule.pattern }}</code>
+            {% if rule.require_pr %}<span class="kg-badge">require PR</span>{% endif %}
+            {% if rule.block_force_push %}<span class="kg-badge">no force</span>{% endif %}
+            {% if rule.allow_deletions %}<span class="kg-badge">deletions ok</span>{% endif %}
+          </span>
+          <form method="post" action="/{{ owner.username }}/{{ repo.name }}/settings/branch-rules/{{ rule.id }}/delete">
+            <button class="kg-btn kg-btn--danger-ghost" type="submit">delete</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/settings/branch-rules" style="margin-top:1rem">
+      <label>
+        pattern
+        <input type="text" name="pattern" required placeholder="main" />
+      </label>
+      <label class="row">
+        <input type="checkbox" name="require_pr" />
+        require pull request
+      </label>
+      <label class="row">
+        <input type="checkbox" name="block_force_push" checked />
+        block force push
+      </label>
+      <label class="row">
+        <input type="checkbox" name="allow_deletions" />
+        allow deletions
+      </label>
+      <div class="kg-actions">
+        <button class="kg-btn" type="submit">add rule</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="kg-settings-section">
+    <span class="kg-kicker">collaborators</span>
+    {% if collaborators.is_empty() %}
+      <p class="kg-muted">No collaborators.</p>
+    {% else %}
+      <ul class="kg-list">
+        {% for c in collaborators %}
+        <li>
+          <span>
+            <img class="kg-avatar kg-avatar--sm" src="{{ c.avatar_url }}" alt="" />
+            <a href="/{{ c.user.username }}">{{ c.user.username }}</a>
+            <span class="kg-badge">{{ c.role }}</span>
+          </span>
+          <form method="post" action="/{{ owner.username }}/{{ repo.name }}/settings/collaborators/{{ c.user.id }}/remove">
+            <button class="kg-btn kg-btn--ghost" type="submit">remove</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/settings/collaborators" style="margin-top:1rem">
+      <label>
+        username
+        <input type="text" name="username" required />
+      </label>
+      <label>
+        role
+        <select name="role">
+          <option value="read">read</option>
+          <option value="write" selected>write</option>
+          <option value="admin">admin</option>
+        </select>
+      </label>
+      <div class="kg-actions">
+        <button class="kg-btn" type="submit">add collaborator</button>
+      </div>
+    </form>
+  </div>
+
+  {% if access.can_owner() || is_site_admin %}
+    <div class="kg-danger-zone">
+      <span class="kg-kicker">danger zone</span>
+
+      {% if access.can_owner() %}
+      <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/settings/danger/archive">
+        <input type="hidden" name="archived" value="{% if repo.archived %}unarchive{% else %}archive{% endif %}" />
+        <div class="kg-danger-row">
+          <p class="kg-muted" style="margin:0;flex:1">{% if repo.archived %}Unarchive this repository.{% else %}Archive — read-only for everyone.{% endif %}</p>
+          <button class="kg-btn kg-btn--danger-ghost" type="submit">{% if repo.archived %}unarchive{% else %}archive{% endif %}</button>
+        </div>
+      </form>
+
+      <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/settings/danger/transfer">
+        <div class="kg-danger-row">
+          <label>
+            transfer to username
+            <input type="text" name="new_owner" required />
+          </label>
+          <button class="kg-btn kg-btn--danger-ghost" type="submit">transfer</button>
+        </div>
+      </form>
+      {% endif %}
+
+      <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/settings/danger/delete">
+        <div class="kg-danger-row">
+          <label>
+            type <code>{{ repo.name }}</code> to delete
+            <input type="text" name="confirm" required autocomplete="off" />
+          </label>
+          <button class="kg-btn kg-btn--danger" type="submit">delete repository</button>
+        </div>
+      </form>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

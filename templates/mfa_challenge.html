@@ -1,0 +1,27 @@
+{% extends "layout.html" %}
+
+{% block title %}verify — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section kg-auth">
+  <p class="kg-landing__brand">
+    <span class="kg-mark__glyph" aria-hidden="true">狐</span>
+    <span class="kg-mark__name">kitgit</span>
+  </p>
+  <h1 class="kg-title">two-factor authentication</h1>
+  <p class="kg-muted">Enter a code from your authenticator app, or a recovery code.</p>
+  {% if let Some(err) = error %}
+    <div class="kg-flash">{{ err }}</div>
+  {% endif %}
+  <form class="kg-form" method="post" action="/auth/mfa" autocomplete="one-time-code">
+    <label>
+      authentication code
+      <input type="text" name="code" required autofocus inputmode="numeric" autocomplete="one-time-code" />
+    </label>
+    <div class="kg-actions">
+      <button class="kg-btn" type="submit">verify</button>
+      <a class="kg-btn kg-btn--ghost" href="/auth/login">back</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

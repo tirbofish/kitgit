@@ -1,0 +1,50 @@
+{% extends "layout.html" %}
+
+{% block title %}edit {{ release.tag_name }} · {{ owner.username }}/{{ repo.name }} — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title">Edit release</h1>
+  {% let tab = "releases" %}
+  {% let archive_ref = release.tag_name.clone() %}
+  {% include "partials/repo_tabs.html" %}
+  {% if let Some(err) = error %}
+    <div class="kg-flash">{{ err }}</div>
+  {% endif %}
+  <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/releases/{{ release.tag_name }}/edit">
+    <label>
+      tag
+      <input type="text" name="tag_name" required value="{{ release.tag_name }}" />
+    </label>
+    <label>
+      title
+      <input type="text" name="title" required value="{{ release.title }}" />
+    </label>
+    <label>
+      target (retarget tag)
+      <input type="text" name="target" list="release-targets" value="{{ target }}" placeholder="branch, tag, or commit SHA" />
+      <datalist id="release-targets">
+        {% for b in branches %}
+          <option value="{{ b }}"></option>
+        {% endfor %}
+      </datalist>
+    </label>
+    <label>
+      notes
+      <textarea name="body" rows="12" placeholder="Markdown supported">{{ release.body }}</textarea>
+    </label>
+    <label class="kg-check">
+      <input type="checkbox" name="is_prerelease" value="on"{% if release.is_prerelease %} checked{% endif %} />
+      This is a pre-release
+    </label>
+    <label class="kg-check">
+      <input type="checkbox" name="is_draft" value="on"{% if release.is_draft %} checked{% endif %} />
+      Save as draft
+    </label>
+    <div class="kg-actions">
+      <button class="kg-btn" type="submit">save changes</button>
+      <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/releases/{{ release.tag_name }}">cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}
