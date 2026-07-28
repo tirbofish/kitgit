@@ -104,6 +104,7 @@
         </span>
       </div>
       <div class="kg-admin-actions">
+        <a class="kg-btn kg-btn--ghost" href="/admin/users/{{ u.username }}/audit">audit</a>
         <form method="post" action="/admin/users/suspend" style="display:inline">
           <input type="hidden" name="user_id" value="{{ u.id }}" />
           {% if u.is_suspended %}

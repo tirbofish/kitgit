@@ -72,6 +72,7 @@ pub fn app_router(state: AppState) -> Router {
         .route("/auth/callback", get(routes::auth_callback))
         .route("/auth/logout", get(routes::auth_logout))
         .route("/admin", get(routes::admin_panel))
+        .route("/admin/users/{username}/audit", get(routes::admin_user_audit))
         .route("/admin/users", post(routes::admin_set_user))
         .route("/admin/users/suspend", post(routes::admin_set_suspended))
         .route("/admin/motd", post(routes::admin_save_motd))

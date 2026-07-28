@@ -184,8 +184,18 @@ pub struct AccountSettingsTemplate {
     pub emails: Vec<UserEmail>,
     pub sessions: Vec<SessionView>,
     pub current_session_id: Option<Uuid>,
+    pub audit_entries: Vec<AuditEntryView>,
     pub error: Option<String>,
     pub message: Option<String>,
+}
+
+pub struct AuditEntryView {
+    pub action: String,
+    pub action_label: String,
+    pub ip: String,
+    pub user_agent: String,
+    pub metadata: String,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Template, WebTemplate)]
@@ -549,6 +559,14 @@ pub struct AdminTemplate {
     pub repo_total: i64,
     pub stats: AdminStatsView,
     pub flash: Option<String>,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "admin_user_audit.html")]
+pub struct AdminUserAuditTemplate {
+    pub viewer: Option<User>,
+    pub user: User,
+    pub audit_entries: Vec<AuditEntryView>,
 }
 
 pub struct AdminInviteView {

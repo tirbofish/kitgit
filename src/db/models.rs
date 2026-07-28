@@ -171,6 +171,19 @@ pub struct ActivityEvent {
     pub created_at: DateTime<Utc>,
 }
 
+/// Per-user security / account audit entry (not the social activity feed).
+#[derive(Debug, Clone, FromRow)]
+pub struct AuditLog {
+    pub id: i64,
+    pub user_id: Uuid,
+    pub actor_id: Option<Uuid>,
+    pub action: String,
+    pub ip: Option<String>,
+    pub user_agent: Option<String>,
+    pub metadata: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, FromRow)]
 pub struct Issue {
     pub id: Uuid,

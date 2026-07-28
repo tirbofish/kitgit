@@ -131,6 +131,34 @@
   </div>
 
   <div class="kg-settings-section">
+    <span class="kg-kicker">security audit log</span>
+    <p class="kg-muted">Recent sign-ins and account changes for this account.</p>
+    {% if audit_entries.is_empty() %}
+      <p class="kg-muted">No audit events yet.</p>
+    {% else %}
+      <ul class="kg-list" style="margin-top:0.75rem">
+        {% for e in audit_entries %}
+        <li>
+          <span>
+            <strong>{{ e.action_label }}</strong>
+            <span class="kg-meta"> · {{ e.created_at }}</span>
+            {% if !e.ip.is_empty() %}
+              <span class="kg-meta"> · {{ e.ip }}</span>
+            {% endif %}
+            {% if !e.user_agent.is_empty() %}
+              <span class="kg-meta"> · {{ e.user_agent }}</span>
+            {% endif %}
+            {% if !e.metadata.is_empty() %}
+              <span class="kg-meta"> · <code>{{ e.metadata }}</code></span>
+            {% endif %}
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+
+  <div class="kg-settings-section">
     <span class="kg-kicker">GDPR</span>
     <div class="kg-actions">
       <a class="kg-btn kg-btn--ghost" href="/settings/account/export">export my data</a>
