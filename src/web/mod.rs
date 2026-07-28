@@ -262,6 +262,18 @@ pub fn app_router(state: AppState) -> Router {
             post(routes::collab_remove),
         )
         .route(
+            "/{owner}/{repo}/settings/webhooks",
+            post(routes::webhook_add),
+        )
+        .route(
+            "/{owner}/{repo}/settings/webhooks/{id}/delete",
+            post(routes::webhook_delete),
+        )
+        .route(
+            "/{owner}/{repo}/settings/webhooks/{id}/toggle",
+            post(routes::webhook_toggle),
+        )
+        .route(
             "/{owner}/{repo}/settings/branch-rules",
             post(routes_extra::branch_rule_add),
         )

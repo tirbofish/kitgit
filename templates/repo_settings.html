@@ -185,6 +185,72 @@
     </form>
   </div>
 
+  <div class="kg-settings-section">
+    <span class="kg-kicker">webhooks</span>
+    <p class="kg-muted">HTTP callbacks for repository events. Optional secret signs payloads as <code>X-Hub-Signature-256</code>.</p>
+    {% if webhooks.is_empty() %}
+      <p class="kg-muted">No webhooks yet.</p>
+    {% else %}
+      <ul class="kg-list">
+        {% for hook in webhooks %}
+        <li>
+          <span>
+            <code>{{ hook.url }}</code>
+            <span class="kg-meta">{{ hook.events_label }}</span>
+            {% if hook.has_secret %}<span class="kg-badge">signed</span>{% endif %}
+            {% if hook.active %}<span class="kg-badge">active</span>{% else %}<span class="kg-badge">inactive</span>{% endif %}
+          </span>
+          <span class="kg-actions" style="gap:0.35rem">
+            <form method="post" action="/{{ owner.username }}/{{ repo.name }}/settings/webhooks/{{ hook.id }}/toggle">
+              <button class="kg-btn kg-btn--ghost" type="submit">{% if hook.active %}disable{% else %}enable{% endif %}</button>
+            </form>
+            <form method="post" action="/{{ owner.username }}/{{ repo.name }}/settings/webhooks/{{ hook.id }}/delete">
+              <button class="kg-btn kg-btn--danger-ghost" type="submit">delete</button>
+            </form>
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/settings/webhooks" style="margin-top:1rem">
+      <label>
+        payload URL
+        <input type="url" name="url" required placeholder="https://example.com/hooks/kitgit" />
+      </label>
+      <label>
+        secret <span class="kg-muted">(optional)</span>
+        <input type="text" name="secret" placeholder="HMAC secret" autocomplete="off" />
+      </label>
+      <fieldset style="border:0;padding:0;margin:0">
+        <legend class="kg-muted" style="margin-bottom:0.35rem">events</legend>
+        <label class="row"><input type="checkbox" name="event_push" checked /> push</label>
+        <label class="row"><input type="checkbox" name="event_issues" checked /> issues</label>
+        <label class="row"><input type="checkbox" name="event_pull_request" checked /> pull_request</label>
+        <label class="row"><input type="checkbox" name="event_release" checked /> release</label>
+      </fieldset>
+      <div class="kg-actions">
+        <button class="kg-btn" type="submit">add webhook</button>
+      </div>
+    </form>
+    {% if !webhook_deliveries.is_empty() %}
+      <div style="margin-top:1.25rem">
+        <span class="kg-kicker">recent deliveries</span>
+        <ul class="kg-list">
+          {% for d in webhook_deliveries %}
+          <li>
+            <span>
+              <strong>{{ d.event }}</strong>{% if !d.action.is_empty() %}.{{ d.action }}{% endif %}
+              <span class="kg-badge">{% if d.success %}ok{% else %}fail{% endif %}</span>
+              <span class="kg-meta">{{ d.status_label }} · {{ d.created_at }}</span>
+              <span class="kg-meta">{{ d.webhook_url }}</span>
+            </span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+
   {% if access.can_owner() || is_site_admin %}
     <div class="kg-danger-zone">
       <span class="kg-kicker">danger zone</span>

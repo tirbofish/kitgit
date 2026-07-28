@@ -8,6 +8,7 @@ mod mfa;
 mod og;
 mod state;
 mod web;
+mod webhooks;
 
 use crate::auth::AuthState;
 use crate::config::Config;

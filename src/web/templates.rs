@@ -78,6 +78,24 @@ pub struct CollaboratorView {
     pub avatar_url: String,
 }
 
+pub struct WebhookView {
+    pub id: Uuid,
+    pub url: String,
+    pub has_secret: bool,
+    pub events_label: String,
+    pub active: bool,
+    pub created_at: String,
+}
+
+pub struct WebhookDeliveryView {
+    pub event: String,
+    pub action: String,
+    pub success: bool,
+    pub status_label: String,
+    pub webhook_url: String,
+    pub created_at: String,
+}
+
 pub struct LanguageStatView {
     pub name: String,
     pub percent: f64,
@@ -521,6 +539,8 @@ pub struct RepoSettingsTemplate {
     pub collaborators: Vec<CollaboratorView>,
     pub branches: Vec<String>,
     pub branch_rules: Vec<BranchRule>,
+    pub webhooks: Vec<WebhookView>,
+    pub webhook_deliveries: Vec<WebhookDeliveryView>,
     pub clone_http: String,
     pub clone_ssh: String,
     pub is_site_admin: bool,
