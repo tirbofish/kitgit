@@ -1,0 +1,37 @@
+{% extends "layout.html" %}
+{% block title %}audit — {{ user.username }} — kitgit{% endblock %}
+{% block content %}
+<section class="kg-section">
+  <span class="kg-kicker">admin</span>
+  <h1 class="kg-title">Audit log · {{ user.username }}</h1>
+  <p class="kg-muted">
+    <a href="/admin">← back to admin</a>
+    · <a href="/{{ user.username }}">profile</a>
+  </p>
+
+  {% if audit_entries.is_empty() %}
+    <p class="kg-muted" style="margin-top:1.5rem">No audit events for this user.</p>
+  {% else %}
+    <ul class="kg-list" style="margin-top:1.5rem">
+      {% for e in audit_entries %}
+      <li>
+        <span>
+          <strong>{{ e.action_label }}</strong>
+          <code class="kg-meta">{{ e.action }}</code>
+          <span class="kg-meta"> · {{ e.created_at }}</span>
+          {% if !e.ip.is_empty() %}
+            <span class="kg-meta"> · {{ e.ip }}</span>
+          {% endif %}
+          {% if !e.user_agent.is_empty() %}
+            <span class="kg-meta"> · {{ e.user_agent }}</span>
+          {% endif %}
+          {% if !e.metadata.is_empty() %}
+            <span class="kg-meta"> · <code>{{ e.metadata }}</code></span>
+          {% endif %}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+{% endblock %}
