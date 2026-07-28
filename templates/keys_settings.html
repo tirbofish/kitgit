@@ -17,7 +17,7 @@
   {% endif %}
 
   <span class="kg-kicker" style="margin-top:1.5rem">SSH keys</span>
-  <p class="kg-muted">Authentication keys let you push/pull over SSH. Signing keys verify signed commits.</p>
+  <p class="kg-muted">Authentication keys let you push/pull over SSH. Signing keys verify signed commits on kitgit (Verified badge).</p>
   {% if !keys.is_empty() %}
     <ul class="kg-list">
       {% for key in keys %}
@@ -70,6 +70,14 @@
     </div>
   </form>
 
+  <div class="kg-signing-hint">
+    <strong>Sign commits with SSH</strong>
+    <p class="kg-muted" style="margin:0.35rem 0 0">Add the public key above with usage <em>Signing</em> or <em>Authentication &amp; Signing</em>, then configure git locally. Author email must match a verified email on your account.</p>
+    <pre>git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/id_ed25519.pub
+git config --global commit.gpgsign true</pre>
+  </div>
+
   <span class="kg-kicker" style="margin-top:2.5rem">GPG keys</span>
   <p class="kg-muted">Used for commit verification. Vigilant mode flags unsigned commits on your profile.</p>
   {% if !gpg_keys.is_empty() %}
@@ -104,5 +112,12 @@
       <button class="kg-btn" type="submit">add</button>
     </div>
   </form>
+
+  <div class="kg-signing-hint">
+    <strong>Sign commits with GPG</strong>
+    <p class="kg-muted" style="margin:0.35rem 0 0">Paste your public key above, then point git at the key id. Author email must match a verified email on your account.</p>
+    <pre>git config --global user.signingkey YOUR_KEY_ID
+git config --global commit.gpgsign true</pre>
+  </div>
 </section>
 {% endblock %}

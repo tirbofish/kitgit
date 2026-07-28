@@ -1,12 +1,24 @@
-{% if let Some(v) = verification %}
+{# Expects CommitView as `c`. Optional: `show_unverified` (bool) — show Unverified for unsigned too. #}
+{% if c.verified %}
 <details class="kg-verify">
   <summary class="kg-badge kg-badge--verified">Verified</summary>
   <div class="kg-verify__panel" role="dialog" aria-label="Commit signature">
+    <p class="kg-verify__row"><strong>Type:</strong> {{ c.verify_kind_label() }}</p>
     <p class="kg-verify__fp">
-      <strong>{{ v.fingerprint_label() }}:</strong>
-      <code>{{ v.fingerprint }}</code>
+      <strong>{{ c.verify_fingerprint_label }}:</strong>
+      <code>{{ c.verify_fingerprint }}</code>
     </p>
-    <p class="kg-meta">Verified on {{ v.verified_at }}</p>
+    <p class="kg-meta">Verified on {{ c.verified_at }}</p>
   </div>
 </details>
+{% else if c.signed %}
+<details class="kg-verify">
+  <summary class="kg-badge kg-badge--unverified">Unverified</summary>
+  <div class="kg-verify__panel" role="dialog" aria-label="Commit signature">
+    <p class="kg-verify__row">Signature present but could not be verified.</p>
+    <p class="kg-meta">Add a matching signing SSH or GPG key under <a href="/settings/keys">Settings → SSH / GPG</a>. The commit author email must match a verified email on that account.</p>
+  </div>
+</details>
+{% else if show_unverified %}
+<span class="kg-badge kg-badge--unverified" title="Commit is not signed">Unverified</span>
 {% endif %}

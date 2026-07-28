@@ -1467,6 +1467,20 @@ html.kg-dark .kg-codeview .punctuation { color: #b0b0b0; }
   cursor: pointer;
 }
 
+.kg-badge--unverified {
+  color: var(--kg-muted);
+  border-color: var(--kg-line-strong);
+  background: transparent;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-weight: 600;
+  cursor: default;
+}
+
+.kg-verify .kg-badge--unverified {
+  cursor: pointer;
+}
+
 .kg-verify {
   position: relative;
   display: inline-block;
@@ -1494,6 +1508,12 @@ html.kg-dark .kg-codeview .punctuation { color: #b0b0b0; }
   box-shadow: 0 8px 24px color-mix(in srgb, var(--kg-fg) 12%, transparent);
 }
 
+.kg-verify__row {
+  margin: 0 0 0.35rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
 .kg-verify__fp {
   margin: 0 0 0.35rem;
   font-size: 0.8125rem;
@@ -1503,6 +1523,29 @@ html.kg-dark .kg-codeview .punctuation { color: #b0b0b0; }
 
 .kg-verify__fp code {
   font-size: 0.75rem;
+}
+
+.kg-verify__panel a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.kg-signing-hint {
+  margin: 1rem 0 0;
+  padding: var(--kg-space-3);
+  border: 1px dashed var(--kg-line-strong);
+  background: color-mix(in srgb, var(--kg-fg) 3%, transparent);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.kg-signing-hint pre {
+  margin: 0.5rem 0 0;
+  padding: var(--kg-space-2);
+  overflow-x: auto;
+  font-size: 0.75rem;
+  background: var(--kg-bg);
+  border: 1px solid var(--kg-line);
 }
 
 .kg-key-row {

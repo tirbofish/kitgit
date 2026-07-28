@@ -65,11 +65,23 @@ pub struct CommitView {
     pub author: String,
     pub email: String,
     pub time: i64,
+    /// True when a signature blob was present on the commit (SSH or GPG).
+    pub signed: bool,
     pub verified: bool,
     pub verify_kind: String,
     pub verify_fingerprint: String,
     pub verify_fingerprint_label: String,
     pub verified_at: String,
+}
+
+impl CommitView {
+    pub fn verify_kind_label(&self) -> &'static str {
+        match self.verify_kind.as_str() {
+            "gpg" => "GPG",
+            "ssh" => "SSH",
+            _ => "Unknown",
+        }
+    }
 }
 
 pub struct CollaboratorView {
