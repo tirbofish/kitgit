@@ -1,7 +1,8 @@
 //! Social, account, branch, raw, and admin helpers.
 
 use super::routes::{
-    avatar_url_for, load_repo_context, redirect_see_other, require_login, AppError, AppResult,
+    audit_entries_view, avatar_url_for, load_repo_context, record_audit, redirect_see_other,
+    require_login, AppError, AppResult,
 };
 use crate::auth::{self, clear_session_cookie, hash_token, token_from_headers};
 use crate::db::queries;
@@ -414,12 +415,15 @@ pub async fn account_settings(
             }
         })
         .collect();
+    let audit_rows = queries::list_audit_log_for_user(&state.pool, user.id, 50).await?;
+    let audit_entries = audit_entries_view(audit_rows);
     Ok(AccountSettingsTemplate {
         viewer: Some(user.clone()),
         user,
         emails,
         sessions,
         current_session_id,
+        audit_entries,
         error: None,
         message: None,
     })
@@ -517,6 +521,15 @@ pub async fn mfa_confirm(
     let hashes: Vec<String> = codes.iter().map(|c| crate::mfa::hash_recovery_code(c)).collect();
     let secret = pending.to_string();
     queries::mfa_confirm_enroll(&state.pool, user.id, &secret, &hashes).await?;
+    record_audit(
+        &state,
+        &headers,
+        user.id,
+        Some(user.id),
+        "mfa.enable",
+        serde_json::json!({}),
+    )
+    .await;
     let mfa = queries::get_user_mfa(&state.pool, user.id).await?;
     Ok(mfa_page(
         user,
@@ -566,6 +579,15 @@ pub async fn mfa_disable(
         .into_response());
     }
     queries::mfa_disable(&state.pool, user.id).await?;
+    record_audit(
+        &state,
+        &headers,
+        user.id,
+        Some(user.id),
+        "mfa.disable",
+        serde_json::json!({}),
+    )
+    .await;
     Ok(redirect_see_other("/settings/mfa").into_response())
 }
 
@@ -610,6 +632,15 @@ pub async fn account_change_username(
             std::fs::rename(&old_root, &new_root)?;
         }
         queries::update_username(&state.pool, user.id, &username).await?;
+        record_audit(
+            &state,
+            &headers,
+            user.id,
+            Some(user.id),
+            "username.change",
+            serde_json::json!({ "from": user.username, "to": username }),
+        )
+        .await;
     }
     Ok(redirect_see_other("/settings/account"))
 }
@@ -639,6 +670,15 @@ pub async fn account_change_password(
     auth::authentik_set_password(&state.auth, pk, &form.new_password)
         .await
         .map_err(|e| AppError::bad(crate::mfa::sanitize_user_error(&e.to_string())))?;
+    record_audit(
+        &state,
+        &headers,
+        user.id,
+        Some(user.id),
+        "password.change",
+        serde_json::json!({}),
+    )
+    .await;
     Ok(redirect_see_other("/settings/account"))
 }
 
@@ -661,6 +701,18 @@ pub async fn account_privacy(
         checkbox(&form.vigilant_mode),
     )
     .await?;
+    record_audit(
+        &state,
+        &headers,
+        user.id,
+        Some(user.id),
+        "privacy.update",
+        serde_json::json!({
+            "show_email": checkbox(&form.show_email),
+            "vigilant_mode": checkbox(&form.vigilant_mode),
+        }),
+    )
+    .await;
     Ok(redirect_see_other("/settings/account"))
 }
 
@@ -680,6 +732,15 @@ pub async fn account_add_email(
         return Err(AppError::bad("invalid email"));
     }
     queries::add_user_email(&state.pool, user.id, email).await?;
+    record_audit(
+        &state,
+        &headers,
+        user.id,
+        Some(user.id),
+        "email.add",
+        serde_json::json!({ "email": email }),
+    )
+    .await;
     Ok(redirect_see_other("/settings/account"))
 }
 
@@ -690,6 +751,15 @@ pub async fn account_delete_email(
 ) -> AppResult<Response> {
     let user = require_login(&state.auth, &headers).await?;
     queries::delete_user_email(&state.pool, id, user.id).await?;
+    record_audit(
+        &state,
+        &headers,
+        user.id,
+        Some(user.id),
+        "email.delete",
+        serde_json::json!({ "email_id": id }),
+    )
+    .await;
     Ok(redirect_see_other("/settings/account"))
 }
 
@@ -700,6 +770,15 @@ pub async fn account_revoke_session(
 ) -> AppResult<Response> {
     let user = require_login(&state.auth, &headers).await?;
     queries::delete_session_by_id(&state.pool, id, user.id).await?;
+    record_audit(
+        &state,
+        &headers,
+        user.id,
+        Some(user.id),
+        "session.revoke",
+        serde_json::json!({ "session_id": id }),
+    )
+    .await;
     Ok(redirect_see_other("/settings/account"))
 }
 
@@ -712,6 +791,15 @@ pub async fn account_revoke_others(
         return Err(AppError::unauthorized());
     };
     queries::delete_other_sessions(&state.pool, user.id, &hash_token(&token)).await?;
+    record_audit(
+        &state,
+        &headers,
+        user.id,
+        Some(user.id),
+        "session.revoke_others",
+        serde_json::json!({}),
+    )
+    .await;
     Ok(redirect_see_other("/settings/account"))
 }
 
@@ -787,6 +875,15 @@ pub async fn gpg_add(
     let fp = crate::git::verify::gpg_fingerprint_from_armor(key)
         .unwrap_or_else(|_| crate::git::verify::gpg_fingerprint_fallback(key));
     queries::add_gpg_key(&state.pool, user.id, form.name.trim(), key, &fp).await?;
+    record_audit(
+        &state,
+        &headers,
+        user.id,
+        Some(user.id),
+        "gpg_key.add",
+        serde_json::json!({ "name": form.name.trim(), "fingerprint": fp }),
+    )
+    .await;
     Ok(redirect_see_other("/settings/keys"))
 }
 
@@ -797,6 +894,15 @@ pub async fn gpg_delete(
 ) -> AppResult<Response> {
     let user = require_login(&state.auth, &headers).await?;
     queries::delete_gpg_key(&state.pool, id, user.id).await?;
+    record_audit(
+        &state,
+        &headers,
+        user.id,
+        Some(user.id),
+        "gpg_key.delete",
+        serde_json::json!({ "key_id": id }),
+    )
+    .await;
     Ok(redirect_see_other("/settings/keys"))
 }
 

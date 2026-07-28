@@ -113,6 +113,95 @@ fn redirect_with_cookies(to: &str, cookies: Vec<HeaderValue>) -> Response {
     res
 }
 
+/// Best-effort client IP / User-Agent from reverse-proxy headers.
+pub fn request_client_meta(headers: &HeaderMap) -> (Option<String>, Option<String>) {
+    let ua = headers
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.chars().take(512).collect::<String>());
+    let ip = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            headers
+                .get("x-real-ip")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        });
+    (ip, ua)
+}
+
+/// Write an audit_log row; failures are logged and never fail the request.
+pub async fn record_audit(
+    state: &AppState,
+    headers: &HeaderMap,
+    user_id: Uuid,
+    actor_id: Option<Uuid>,
+    action: &str,
+    metadata: serde_json::Value,
+) {
+    let (ip, ua) = request_client_meta(headers);
+    if let Err(e) = queries::record_audit_log(
+        &state.pool,
+        user_id,
+        actor_id,
+        action,
+        ip.as_deref(),
+        ua.as_deref(),
+        metadata,
+    )
+    .await
+    {
+        tracing::warn!("audit_log write failed ({action}): {e:#}");
+    }
+}
+
+fn audit_action_label(action: &str) -> &'static str {
+    match action {
+        "login.success" => "Signed in",
+        "login.failure" => "Failed sign-in",
+        "logout" => "Signed out",
+        "ssh_key.add" => "Added SSH key",
+        "ssh_key.delete" => "Removed SSH key",
+        "gpg_key.add" => "Added GPG key",
+        "gpg_key.delete" => "Removed GPG key",
+        "session.revoke" => "Revoked session",
+        "session.revoke_others" => "Revoked other sessions",
+        "mfa.enable" => "Enabled MFA",
+        "mfa.disable" => "Disabled MFA",
+        "username.change" => "Changed username",
+        "password.change" => "Changed password",
+        "email.add" => "Added email",
+        "email.delete" => "Removed email",
+        "privacy.update" => "Updated privacy settings",
+        _ => "Account activity",
+    }
+}
+
+pub fn audit_entries_view(rows: Vec<crate::db::models::AuditLog>) -> Vec<AuditEntryView> {
+    rows.into_iter()
+        .map(|e| {
+            let meta = if e.metadata.is_null() || e.metadata == serde_json::json!({}) {
+                String::new()
+            } else {
+                e.metadata.to_string()
+            };
+            AuditEntryView {
+                action: e.action.clone(),
+                action_label: audit_action_label(&e.action).to_string(),
+                ip: e.ip.unwrap_or_default(),
+                user_agent: e.user_agent.unwrap_or_default(),
+                metadata: meta,
+                created_at: e.created_at,
+            }
+        })
+        .collect()
+}
+
 pub fn avatar_url_for(user: &User) -> String {
     let bust = user.updated_at.timestamp();
     // Always go through our avatar endpoint when a local file exists.
@@ -939,22 +1028,46 @@ pub struct LoginForm {
 
 pub async fn auth_login_submit(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Form(form): Form<LoginForm>,
 ) -> AppResult<Response> {
     match auth::login_with_password(&state.auth, &form.username, &form.password).await {
-        Ok(LoginOutcome::Complete { token, .. }) => Ok(redirect_with_cookies(
-            "/",
-            vec![
-                session_cookie_header(&token, 14 * 24 * 3600),
-                clear_mfa_pending_cookie(),
-            ],
-        )),
+        Ok(LoginOutcome::Complete { user, token }) => {
+            record_audit(
+                &state,
+                &headers,
+                user.id,
+                Some(user.id),
+                "login.success",
+                serde_json::json!({ "method": "password" }),
+            )
+            .await;
+            Ok(redirect_with_cookies(
+                "/",
+                vec![
+                    session_cookie_header(&token, 14 * 24 * 3600),
+                    clear_mfa_pending_cookie(),
+                ],
+            ))
+        }
         Ok(LoginOutcome::MfaRequired { pending_token }) => Ok(redirect_with_cookie(
             "/auth/mfa",
             mfa_pending_cookie_header(&pending_token, 10 * 60),
         )),
         Err(e) => {
             tracing::warn!("login failed: {e:#}");
+            let uname = form.username.trim().to_ascii_lowercase();
+            if let Ok(Some(u)) = queries::get_user_by_username(&state.pool, &uname).await {
+                record_audit(
+                    &state,
+                    &headers,
+                    u.id,
+                    None,
+                    "login.failure",
+                    serde_json::json!({ "method": "password", "username": uname }),
+                )
+                .await;
+            }
             Ok(LoginTemplate {
                 viewer: None,
                 error: Some(crate::mfa::sanitize_user_error(&e.to_string())),
@@ -995,13 +1108,24 @@ pub async fn auth_mfa_submit(
         return Ok(redirect("/auth/login"));
     };
     match auth::complete_mfa_login(&state.auth, &pending, &form.code).await {
-        Ok((_user, token)) => Ok(redirect_with_cookies(
-            "/",
-            vec![
-                session_cookie_header(&token, 14 * 24 * 3600),
-                clear_mfa_pending_cookie(),
-            ],
-        )),
+        Ok((user, token)) => {
+            record_audit(
+                &state,
+                &headers,
+                user.id,
+                Some(user.id),
+                "login.success",
+                serde_json::json!({ "method": "password+mfa" }),
+            )
+            .await;
+            Ok(redirect_with_cookies(
+                "/",
+                vec![
+                    session_cookie_header(&token, 14 * 24 * 3600),
+                    clear_mfa_pending_cookie(),
+                ],
+            ))
+        }
         Err(e) => {
             tracing::warn!("mfa challenge failed: {e:#}");
             let msg = crate::mfa::sanitize_user_error(&e.to_string());
@@ -1151,6 +1275,7 @@ pub struct CallbackQuery {
 
 pub async fn auth_callback(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(q): Query<CallbackQuery>,
 ) -> AppResult<Response> {
     if let Some(err) = q.error {
@@ -1158,7 +1283,16 @@ pub async fn auth_callback(
     }
     let code = q.code.ok_or_else(|| AppError::bad("missing code"))?;
     let st = q.state.ok_or_else(|| AppError::bad("missing state"))?;
-    let (_user, token) = auth::finish_login(&state.auth, &code, &st).await?;
+    let (user, token) = auth::finish_login(&state.auth, &code, &st).await?;
+    record_audit(
+        &state,
+        &headers,
+        user.id,
+        Some(user.id),
+        "login.success",
+        serde_json::json!({ "method": "oidc" }),
+    )
+    .await;
     let cookie = session_cookie_header(&token, 14 * 24 * 3600);
     Ok(redirect_with_cookie("/", cookie))
 }
@@ -1167,6 +1301,17 @@ pub async fn auth_logout(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<Response> {
+    if let Ok(Some(user)) = current_user(&state.auth, &headers).await {
+        record_audit(
+            &state,
+            &headers,
+            user.id,
+            Some(user.id),
+            "logout",
+            serde_json::json!({}),
+        )
+        .await;
+    }
     auth::logout(&state.auth, &headers).await?;
     Ok(redirect_with_cookie("/", clear_session_cookie()))
 }
@@ -1322,6 +1467,24 @@ pub async fn admin_panel(
             disk_label: format_bytes(stats.disk_bytes as i64),
         },
         flash: q.flash.filter(|s| !s.is_empty()),
+    })
+}
+
+pub async fn admin_user_audit(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(username): Path<String>,
+) -> AppResult<impl IntoResponse> {
+    let viewer = require_site_admin(&state.auth, &headers).await?;
+    let user = queries::get_user_by_username(&state.pool, &username)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    let audit_rows = queries::list_audit_log_for_user(&state.pool, user.id, 100).await?;
+    let audit_entries = audit_entries_view(audit_rows);
+    Ok(AdminUserAuditTemplate {
+        viewer: Some(viewer),
+        user,
+        audit_entries,
     })
 }
 
@@ -1779,6 +1942,15 @@ pub async fn keys_add(
     queries::add_ssh_key(&state.pool, user.id, name, public_key, &fp, key_usage)
         .await
         .map_err(|e| AppError::bad(format!("could not add key: {e}")))?;
+    record_audit(
+        &state,
+        &headers,
+        user.id,
+        Some(user.id),
+        "ssh_key.add",
+        serde_json::json!({ "name": name, "fingerprint": fp, "key_usage": key_usage }),
+    )
+    .await;
     Ok(redirect_see_other("/settings/keys"))
 }
 
@@ -1805,6 +1977,15 @@ pub async fn keys_delete(
 ) -> AppResult<Response> {
     let user = require_login(&state.auth, &headers).await?;
     queries::delete_ssh_key(&state.pool, user.id, id).await?;
+    record_audit(
+        &state,
+        &headers,
+        user.id,
+        Some(user.id),
+        "ssh_key.delete",
+        serde_json::json!({ "key_id": id }),
+    )
+    .await;
     Ok(redirect_see_other("/settings/keys"))
 }
 

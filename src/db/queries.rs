@@ -2349,3 +2349,45 @@ pub async fn lfs_object_size(pool: &PgPool, oid: &str) -> Result<Option<i64>> {
         .await?;
     Ok(row.map(|r| r.0))
 }
+
+// ── per-user audit log ───────────────────────────────────────────────────────
+
+pub async fn record_audit_log(
+    pool: &PgPool,
+    user_id: Uuid,
+    actor_id: Option<Uuid>,
+    action: &str,
+    ip: Option<&str>,
+    user_agent: Option<&str>,
+    metadata: serde_json::Value,
+) -> Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO audit_log (user_id, actor_id, action, ip, user_agent, metadata)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        "#,
+    )
+    .bind(user_id)
+    .bind(actor_id)
+    .bind(action)
+    .bind(ip)
+    .bind(user_agent)
+    .bind(metadata)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn list_audit_log_for_user(
+    pool: &PgPool,
+    user_id: Uuid,
+    limit: i64,
+) -> Result<Vec<AuditLog>> {
+    Ok(sqlx::query_as::<_, AuditLog>(
+        "SELECT * FROM audit_log WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
+    )
+    .bind(user_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?)
+}
