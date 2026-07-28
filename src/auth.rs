@@ -105,9 +105,9 @@ pub fn hash_token(token: &str) -> String {
 }
 
 pub fn new_session_token() -> String {
-    use rand::RngCore;
+    use rand::RngExt;
     let mut buf = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut buf);
+    rand::rng().fill(&mut buf);
     hex::encode(buf)
 }
 

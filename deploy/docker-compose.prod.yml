@@ -100,6 +100,8 @@ services:
       KITGIT_DATA_DIR: /data
       KITGIT_HTTP_BIND: 0.0.0.0:8080
       KITGIT_SSH_BIND: 0.0.0.0:2222
+      # Advertise classic git@host:… URLs (host publishes 22 → container 2222).
+      KITGIT_SSH_PUBLIC_PORT: "22"
       KITGIT_PUBLIC_URL: ${KITGIT_PUBLIC_URL}
       KITGIT_SESSION_SECRET: ${KITGIT_SESSION_SECRET}
       KITGIT_OIDC_ISSUER: ${KITGIT_OIDC_ISSUER}
@@ -115,7 +117,8 @@ services:
     volumes:
       - kitgit-data:/data
     ports:
-      - "2222:2222"
+      # Host 22 = Git SSH (GitHub-style). Droplet admin sshd listens on 2222.
+      - "22:2222"
     depends_on:
       postgres:
         condition: service_healthy

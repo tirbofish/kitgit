@@ -7,7 +7,7 @@ use crate::db::queries;
 use crate::git;
 use crate::git::ssh::fingerprint_ssh_pubkey;
 use crate::highlight::highlight;
-use crate::markdown::render_markdown;
+use crate::markdown::{MarkdownRepoBase, parent_dir, render_markdown, render_markdown_in_repo};
 use crate::state::AppState;
 use crate::web::templates::*;
 use axum::extract::{Form, Multipart, Path, Query, State};
@@ -265,9 +265,23 @@ fn html_escape(s: &str) -> String {
         .collect()
 }
 
-fn readme_to_html(name: &str, src: &str) -> String {
+fn readme_to_html(
+    name: &str,
+    src: &str,
+    owner: &str,
+    repo: &str,
+    git_ref: &str,
+    dir: &str,
+    grepo: &git2::Repository,
+) -> String {
     if name.ends_with(".md") || name.ends_with(".MD") {
-        render_markdown(src)
+        let base = MarkdownRepoBase {
+            owner,
+            repo,
+            git_ref,
+            dir,
+        };
+        render_markdown_in_repo(src, &base, |path| git::path_is_dir(grepo, git_ref, path))
     } else {
         format!("<pre>{}</pre>", html_escape(src))
     }
@@ -600,10 +614,14 @@ fn clone_urls(state: &AppState, owner: &str, repo: &str) -> (String, String) {
         .ok()
         .and_then(|u| u.host_str().map(|h| h.to_string()))
         .unwrap_or_else(|| "localhost".into());
-    let port = state.config.ssh_bind.port();
-    // Always use ssh:// form. `git@host:2222/path` is parsed as host=host path=2222/path
-    // on port 22 â€” which hits the system sshd and asks for a password.
-    let ssh = format!("ssh://git@{host}:{port}/{owner}/{repo}.git");
+    let port = state.config.ssh_advertise_port();
+    // Port 22: GitHub-style `git@host:owner/repo.git` (default SSH port).
+    // Other ports: ssh:// form — `git@host:2222/path` is parsed as path `2222/path` on port 22.
+    let ssh = if port == 22 {
+        format!("git@{host}:{owner}/{repo}.git")
+    } else {
+        format!("ssh://git@{host}:{port}/{owner}/{repo}.git")
+    };
     (http, ssh)
 }
 
@@ -1507,7 +1525,15 @@ pub async fn repo_home(
                 })
                 .collect();
             if let Ok(Some((name, src))) = git::find_readme(g, &current_branch, "") {
-                readme_html = Some(readme_to_html(&name, &src));
+                readme_html = Some(readme_to_html(
+                    &name,
+                    &src,
+                    &owner,
+                    &repo,
+                    &current_branch,
+                    "",
+                    g,
+                ));
             }
             if languages.as_object().map(|o| o.is_empty()).unwrap_or(true) {
                 if let Ok(files) = git::walk_files(g, &current_branch) {
@@ -1590,7 +1616,15 @@ pub async fn repo_tree(
         })
         .collect();
     let readme_html = match git::find_readme(&grepo, &branch, &path) {
-        Ok(Some((name, src))) => Some(readme_to_html(&name, &src)),
+        Ok(Some((name, src))) => Some(readme_to_html(
+            &name,
+            &src,
+            &owner,
+            &repo,
+            &branch,
+            &path,
+            &grepo,
+        )),
         _ => None,
     };
     let branches = git::list_branches(&grepo).unwrap_or_default();
@@ -1634,7 +1668,16 @@ pub async fn repo_blob(
     } else {
         let text = String::from_utf8_lossy(&data);
         if path.ends_with(".md") || path.ends_with(".MD") {
-            (Some(render_markdown(&text)), true)
+            let base = MarkdownRepoBase {
+                owner: &owner,
+                repo: &repo,
+                git_ref: &branch,
+                dir: parent_dir(&path),
+            };
+            let html = render_markdown_in_repo(&text, &base, |p| {
+                git::path_is_dir(&grepo, &branch, p)
+            });
+            (Some(html), true)
         } else {
             (Some(highlight(&path, &text)), false)
         }

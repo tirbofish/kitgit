@@ -3,9 +3,9 @@ use crate::git::repo::bare_path;
 use crate::state::AppState;
 use anyhow::{Context, Result};
 use base64::Engine;
-use russh::keys::{decode_secret_key, encode_pkcs8_pem, PublicKey as RPublicKey, PublicKeyBase64};
-use russh::server::{Auth, Handler, Msg, Server, Session};
-use russh::{Channel, ChannelId, CryptoVec, MethodKind, MethodSet};
+use russh::keys::{decode_secret_key, encode_pkcs8_pem, PublicKeyBase64};
+use russh::server::{Auth, ChannelOpenHandle, Handler, Msg, Server, Session};
+use russh::{Channel, ChannelId, MethodKind, MethodSet};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -20,6 +20,13 @@ fn publickey_methods() -> MethodSet {
     m
 }
 
+fn auth_reject() -> Auth {
+    Auth::Reject {
+        proceed_with_methods: Some(publickey_methods()),
+        partial_success: false,
+    }
+}
+
 pub async fn run_ssh(state: AppState) -> Result<()> {
     std::fs::create_dir_all(&state.config.data_dir)?;
     let key_path = state.config.ssh_host_key_path();
@@ -30,6 +37,8 @@ pub async fn run_ssh(state: AppState) -> Result<()> {
         auth_rejection_time: std::time::Duration::from_secs(1),
         keys: vec![key],
         methods: publickey_methods(),
+        // Default Preferred leads with mlkem768x25519-sha256 (PQ hybrid KEX).
+        preferred: russh::Preferred::DEFAULT,
         ..Default::default()
     };
     let bind = state.config.ssh_bind;
@@ -46,7 +55,7 @@ fn load_or_create_host_key(path: &PathBuf) -> Result<russh::keys::PrivateKey> {
         return decode_secret_key(&data, None).context("decode host key");
     }
     let key = russh::keys::PrivateKey::random(
-        &mut rand::thread_rng(),
+        &mut rand::rng(),
         russh::keys::Algorithm::Ed25519,
     )?;
     let mut pem = Vec::new();
@@ -64,7 +73,7 @@ pub fn fingerprint_ssh_pubkey(line: &str) -> Result<String> {
     Ok(ssh_fingerprint_sha256(&raw))
 }
 
-fn fingerprint_public_key(key: &RPublicKey) -> String {
+fn fingerprint_public_key(key: &russh::keys::PublicKey) -> String {
     // Must match the authorized_keys blob (type || key material), same as
     // OpenSSH `ssh-keygen -lf` SHA256 fingerprints (base64, no padding).
     let blob = key.public_key_bytes();
@@ -91,6 +100,7 @@ impl Server for SshServer {
         SshHandler {
             state: self.state.clone(),
             user_id: None,
+            username: None,
             stdin: None,
             receive_meta: None,
         }
@@ -100,8 +110,37 @@ impl Server for SshServer {
 struct SshHandler {
     state: AppState,
     user_id: Option<Uuid>,
+    username: Option<String>,
     stdin: Option<Arc<Mutex<tokio::process::ChildStdin>>>,
     receive_meta: Option<(String, String)>,
+}
+
+impl SshHandler {
+    /// Print `static/text.txt` (with `{user}` substituted) and close — no shell access.
+    async fn greet_and_quit(
+        &self,
+        channel: ChannelId,
+        session: &mut Session,
+    ) -> Result<(), anyhow::Error> {
+        let username = self.username.as_deref().unwrap_or("git");
+        let path = self.state.config.static_dir.join("text.txt");
+        let mut msg = tokio::fs::read_to_string(&path).await.unwrap_or_else(|_| {
+            format!(
+                "Hi {username}! You've successfully authenticated, but kitgit does not provide shell access.\n"
+            )
+        });
+        msg = msg.replace("{user}", username);
+        if !msg.ends_with('\n') {
+            msg.push('\n');
+        }
+        session.channel_success(channel)?;
+        session.data(channel, msg.into_bytes())?;
+        // Match GitHub: non-zero exit so clients don't treat this as a shell login.
+        session.exit_status_request(channel, 1)?;
+        session.eof(channel)?;
+        session.close(channel)?;
+        Ok(())
+    }
 }
 
 impl Handler for SshHandler {
@@ -110,17 +149,16 @@ impl Handler for SshHandler {
     async fn auth_publickey(
         &mut self,
         _user: &str,
-        public_key: &RPublicKey,
+        public_key: &russh::keys::PublicKey,
     ) -> Result<Auth, Self::Error> {
         let fp = fingerprint_public_key(public_key);
         if let Some(user) = queries::user_by_ssh_fingerprint(&self.state.pool, &fp).await? {
             self.user_id = Some(user.id);
+            self.username = Some(user.username);
             return Ok(Auth::Accept);
         }
         tracing::debug!("ssh publickey rejected fp={fp}");
-        Ok(Auth::Reject {
-            proceed_with_methods: Some(publickey_methods()),
-        })
+        Ok(auth_reject())
     }
 
     async fn auth_password(
@@ -129,17 +167,45 @@ impl Handler for SshHandler {
         _password: &str,
     ) -> Result<Auth, Self::Error> {
         // Password auth is not supported — keys only.
-        Ok(Auth::Reject {
-            proceed_with_methods: Some(publickey_methods()),
-        })
+        Ok(auth_reject())
     }
 
     async fn channel_open_session(
         &mut self,
         _channel: Channel<Msg>,
+        reply: ChannelOpenHandle,
         _session: &mut Session,
-    ) -> Result<bool, Self::Error> {
-        Ok(true)
+    ) -> Result<(), Self::Error> {
+        reply.accept().await;
+        Ok(())
+    }
+
+    async fn pty_request(
+        &mut self,
+        channel: ChannelId,
+        _term: &str,
+        _col_width: u32,
+        _row_height: u32,
+        _pix_width: u32,
+        _pix_height: u32,
+        _modes: &[(russh::Pty, u32)],
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        // Accept PTY so interactive `ssh git@host` can proceed to shell_request.
+        session.channel_success(channel)?;
+        Ok(())
+    }
+
+    async fn shell_request(
+        &mut self,
+        channel: ChannelId,
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        if self.user_id.is_none() {
+            session.channel_failure(channel)?;
+            return Ok(());
+        }
+        self.greet_and_quit(channel, session).await
     }
 
     async fn exec_request(
@@ -157,16 +223,13 @@ impl Handler for SshHandler {
         let (service, repo_path) = match parse_git_command(&cmd) {
             Ok(v) => v,
             Err(_) => {
-                session.data(channel, CryptoVec::from_slice(b"unsupported command\n"))?;
-                session.exit_status_request(channel, 1)?;
-                session.eof(channel)?;
-                session.close(channel)?;
-                return Ok(());
+                // Non-git exec (e.g. `ssh host exit`) — same greeting as a bare SSH.
+                return self.greet_and_quit(channel, session).await;
             }
         };
         let (owner, name) = split_repo_path(&repo_path)?;
         let Some((repo, _)) = queries::get_repo(&self.state.pool, &owner, &name).await? else {
-            session.data(channel, CryptoVec::from_slice(b"repository not found\n"))?;
+            session.data(channel, b"repository not found\n".as_slice())?;
             session.exit_status_request(channel, 1)?;
             session.eof(channel)?;
             session.close(channel)?;
@@ -179,7 +242,7 @@ impl Handler for SshHandler {
             _ => false,
         };
         if !allowed {
-            session.data(channel, CryptoVec::from_slice(b"access denied\n"))?;
+            session.data(channel, b"access denied\n".as_slice())?;
             session.exit_status_request(channel, 1)?;
             session.eof(channel)?;
             session.close(channel)?;
@@ -208,7 +271,7 @@ impl Handler for SshHandler {
                 match stdout.read(&mut buf).await {
                     Ok(0) => break,
                     Ok(n) => {
-                        let _ = handle.data(channel, CryptoVec::from_slice(&buf[..n])).await;
+                        let _ = handle.data(channel, buf[..n].to_vec()).await;
                     }
                     Err(_) => break,
                 }

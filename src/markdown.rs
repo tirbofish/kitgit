@@ -1,9 +1,38 @@
-use pulldown_cmark::{html, Options, Parser};
+use pulldown_cmark::{Event, Options, Parser, Tag, html};
 use std::borrow::Cow;
+
+/// Where a Markdown file lives inside a repository, used to rewrite relative
+/// links/images so they resolve under `/{owner}/{repo}/…` instead of replacing
+/// the repo name in the browser URL (e.g. `/owner/docs`).
+#[derive(Clone, Copy, Debug)]
+pub struct MarkdownRepoBase<'a> {
+    pub owner: &'a str,
+    pub repo: &'a str,
+    pub git_ref: &'a str,
+    /// Directory containing the Markdown file (`""` for repo root).
+    pub dir: &'a str,
+}
 
 /// Render Markdown to HTML. Protects TeX math from Markdown emphasis/escaping,
 /// then leaves `$…$` / `$$…$$` for client-side KaTeX (+ KaTeX fonts).
 pub fn render_markdown(src: &str) -> String {
+    render_markdown_inner(src, None)
+}
+
+/// Like [`render_markdown`], but rewrites relative links and images against a
+/// repository path. `is_dir` should return true when `path` is a tree entry.
+pub fn render_markdown_in_repo(
+    src: &str,
+    base: &MarkdownRepoBase<'_>,
+    is_dir: impl Fn(&str) -> bool,
+) -> String {
+    render_markdown_inner(src, Some((base, &is_dir)))
+}
+
+fn render_markdown_inner(
+    src: &str,
+    repo: Option<(&MarkdownRepoBase<'_>, &dyn Fn(&str) -> bool)>,
+) -> String {
     let src = src.strip_prefix('\u{feff}').unwrap_or(src);
     let src = preprocess_math_fences(src);
     let (protected, slots) = protect_math(&src);
@@ -14,8 +43,145 @@ pub fn render_markdown(src: &str) -> String {
     opts.insert(Options::ENABLE_FOOTNOTES);
     let parser = Parser::new_ext(&protected, opts);
     let mut out = String::new();
-    html::push_html(&mut out, parser);
+    if let Some((base, is_dir)) = repo {
+        let events = parser.map(|ev| rewrite_event(ev, base, is_dir));
+        html::push_html(&mut out, events);
+    } else {
+        html::push_html(&mut out, parser);
+    }
     restore_math(&out, &slots)
+}
+
+fn rewrite_event<'a>(
+    event: Event<'a>,
+    base: &MarkdownRepoBase<'_>,
+    is_dir: &dyn Fn(&str) -> bool,
+) -> Event<'a> {
+    match event {
+        Event::Start(Tag::Link {
+            link_type,
+            dest_url,
+            title,
+            id,
+        }) => Event::Start(Tag::Link {
+            link_type,
+            dest_url: rewrite_repo_url(&dest_url, base, is_dir, false).into(),
+            title,
+            id,
+        }),
+        Event::Start(Tag::Image {
+            link_type,
+            dest_url,
+            title,
+            id,
+        }) => Event::Start(Tag::Image {
+            link_type,
+            dest_url: rewrite_repo_url(&dest_url, base, is_dir, true).into(),
+            title,
+            id,
+        }),
+        other => other,
+    }
+}
+
+fn rewrite_repo_url(
+    url: &str,
+    base: &MarkdownRepoBase<'_>,
+    is_dir: &dyn Fn(&str) -> bool,
+    image: bool,
+) -> String {
+    if !is_relative_repo_path(url) {
+        return url.to_string();
+    }
+
+    let (path_part, suffix) = split_url_suffix(url);
+    let resolved = resolve_repo_path(base.dir, path_part);
+
+    if image {
+        if resolved.is_empty() {
+            return format!(
+                "/{}/{}/tree/{}{suffix}",
+                base.owner, base.repo, base.git_ref
+            );
+        }
+        return format!(
+            "/{}/{}/raw/{}/{}{suffix}",
+            base.owner, base.repo, base.git_ref, resolved
+        );
+    }
+
+    if resolved.is_empty() {
+        return format!(
+            "/{}/{}/tree/{}{suffix}",
+            base.owner, base.repo, base.git_ref
+        );
+    }
+
+    let kind = if path_part.ends_with('/') || is_dir(&resolved) {
+        "tree"
+    } else {
+        "blob"
+    };
+    format!(
+        "/{}/{}/{}/{}/{}{suffix}",
+        base.owner, base.repo, kind, base.git_ref, resolved
+    )
+}
+
+fn is_relative_repo_path(url: &str) -> bool {
+    if url.is_empty() || url.starts_with('#') {
+        return false;
+    }
+    if url.starts_with('/') || url.starts_with("//") {
+        return false;
+    }
+    if url.contains("://") {
+        return false;
+    }
+    let scheme = url.split_once(':').map(|(s, _)| s);
+    if let Some(s) = scheme {
+        // `mailto:`, `tel:`, etc. — but allow Windows-ish drive letters? skip.
+        if s.chars().all(|c| c.is_ascii_alphabetic()) && s.len() > 1 {
+            return false;
+        }
+    }
+    true
+}
+
+fn split_url_suffix(url: &str) -> (&str, &str) {
+    let bytes = url.as_bytes();
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'?' || b == b'#' {
+            return (&url[..i], &url[i..]);
+        }
+    }
+    (url, "")
+}
+
+/// Join `rel` onto `dir` with `.` / `..` normalization (POSIX-style).
+fn resolve_repo_path(dir: &str, rel: &str) -> String {
+    let mut stack: Vec<&str> = dir
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
+    for part in rel.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                stack.pop();
+            }
+            p => stack.push(p),
+        }
+    }
+    stack.join("/")
+}
+
+/// Parent directory of a repo-relative file path (`""` for root files).
+pub fn parent_dir(path: &str) -> &str {
+    match path.rsplit_once('/') {
+        Some((dir, _)) => dir,
+        None => "",
+    }
 }
 
 fn preprocess_math_fences(src: &str) -> String {
@@ -205,5 +371,99 @@ mod tests {
         let html = render_markdown("```latex\n\\frac{a}{b}\n```");
         assert!(html.contains("$$"), "{html}");
         assert!(html.contains("\\frac{a}{b}"), "{html}");
+    }
+
+    #[test]
+    fn relative_link_to_docs_dir_uses_tree() {
+        let base = MarkdownRepoBase {
+            owner: "tirbofish",
+            repo: "kitgit",
+            git_ref: "main",
+            dir: "",
+        };
+        let html = render_markdown_in_repo(
+            "see the [docs](docs) folder",
+            &base,
+            |p| p == "docs",
+        );
+        assert!(
+            html.contains(r#"href="/tirbofish/kitgit/tree/main/docs""#),
+            "{html}"
+        );
+        assert!(!html.contains(r#"href="docs""#), "{html}");
+    }
+
+    #[test]
+    fn relative_link_to_file_uses_blob() {
+        let base = MarkdownRepoBase {
+            owner: "tirbofish",
+            repo: "kitgit",
+            git_ref: "main",
+            dir: "",
+        };
+        let html = render_markdown_in_repo(
+            "[guide](docs/production.md)",
+            &base,
+            |_| false,
+        );
+        assert!(
+            html.contains(r#"href="/tirbofish/kitgit/blob/main/docs/production.md""#),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn relative_link_resolves_from_file_dir() {
+        let base = MarkdownRepoBase {
+            owner: "o",
+            repo: "r",
+            git_ref: "main",
+            dir: "docs",
+        };
+        let html = render_markdown_in_repo("[x](./brand.md)", &base, |_| false);
+        assert!(
+            html.contains(r#"href="/o/r/blob/main/docs/brand.md""#),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn relative_image_uses_raw() {
+        let base = MarkdownRepoBase {
+            owner: "o",
+            repo: "r",
+            git_ref: "main",
+            dir: "",
+        };
+        let html = render_markdown_in_repo("![logo](static/logo.png)", &base, |_| false);
+        assert!(
+            html.contains(r#"src="/o/r/raw/main/static/logo.png""#),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn absolute_and_fragment_links_untouched() {
+        let base = MarkdownRepoBase {
+            owner: "o",
+            repo: "r",
+            git_ref: "main",
+            dir: "",
+        };
+        let html = render_markdown_in_repo(
+            "[a](https://example.com) [b](#section) [c](/already/absolute)",
+            &base,
+            |_| false,
+        );
+        assert!(html.contains("href=\"https://example.com\""), "{html}");
+        assert!(html.contains("href=\"#section\""), "{html}");
+        assert!(html.contains("href=\"/already/absolute\""), "{html}");
+    }
+
+    #[test]
+    fn parent_dir_helpers() {
+        assert_eq!(parent_dir("README.md"), "");
+        assert_eq!(parent_dir("docs/production.md"), "docs");
+        assert_eq!(parent_dir("a/b/c.md"), "a/b");
     }
 }

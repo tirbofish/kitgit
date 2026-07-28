@@ -240,6 +240,23 @@ pub fn read_blob(repo: &G2Repo, reference: &str, path: &str) -> Result<(Vec<u8>,
     Ok((data, binary))
 }
 
+/// Whether `path` is a tree (directory) at `reference`. Missing paths are not trees.
+pub fn path_is_dir(repo: &G2Repo, reference: &str, path: &str) -> bool {
+    if path.is_empty() {
+        return true;
+    }
+    let Ok(commit) = repo.revparse_single(reference).and_then(|o| o.peel_to_commit()) else {
+        return false;
+    };
+    let Ok(tree) = commit.tree() else {
+        return false;
+    };
+    let Ok(entry) = tree.get_path(Path::new(path)) else {
+        return false;
+    };
+    entry.kind() == Some(ObjectType::Tree)
+}
+
 /// Find a README in `dir` only (GitHub-style). Empty `dir` = repo root.
 /// Does not fall back to parent/root READMEs when browsing a subdirectory.
 pub fn find_readme(

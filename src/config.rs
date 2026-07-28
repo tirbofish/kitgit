@@ -23,6 +23,11 @@ pub struct Config {
     #[arg(long, env = "KITGIT_SSH_BIND", default_value = "0.0.0.0:2222")]
     pub ssh_bind: SocketAddr,
 
+    /// Port advertised in clone URLs / `ssh git@host`. Defaults to the
+    /// `KITGIT_SSH_BIND` port. Set to `22` in production when published as `22:2222`.
+    #[arg(long, env = "KITGIT_SSH_PUBLIC_PORT", default_value_t = 0)]
+    pub ssh_public_port: u16,
+
     #[arg(long, env = "KITGIT_PUBLIC_URL", default_value = "http://localhost:8080")]
     pub public_url: String,
 
@@ -162,5 +167,14 @@ impl Config {
 
     pub fn ssh_host_key_path(&self) -> PathBuf {
         self.data_dir.join("ssh_host_ed25519_key")
+    }
+
+    /// External SSH port for clone URLs. Falls back to the bind port when unset (0).
+    pub fn ssh_advertise_port(&self) -> u16 {
+        if self.ssh_public_port == 0 {
+            self.ssh_bind.port()
+        } else {
+            self.ssh_public_port
+        }
     }
 }
