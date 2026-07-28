@@ -3743,6 +3743,7 @@ pub async fn repo_settings(
     }
     let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
     let branch_rules = queries::list_branch_rules(&state.pool, repository.id).await?;
+    let deploy_keys = crate::db::deploy_keys::list_deploy_keys(&state.pool, repository.id).await?;
     let is_site_admin = viewer.as_ref().map(|u| u.is_site_admin).unwrap_or(false);
     Ok(RepoSettingsTemplate {
         viewer,
@@ -3754,6 +3755,7 @@ pub async fn repo_settings(
         clone_http,
         clone_ssh,
         branch_rules,
+        deploy_keys,
         is_site_admin,
         error: None,
     })
@@ -3880,6 +3882,61 @@ pub async fn collab_remove(
         return Err(AppError::forbidden());
     }
     queries::remove_collaborator(&state.pool, repository.id, user_id).await?;
+    Ok(redirect_see_other(&format!("/{owner}/{repo}/settings")))
+}
+
+#[derive(Deserialize)]
+pub struct DeployKeyAddForm {
+    pub name: String,
+    pub public_key: String,
+    /// When set (checkbox), key may push; otherwise read-only.
+    pub write_access: Option<String>,
+}
+
+pub async fn deploy_key_add(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+    Form(form): Form<DeployKeyAddForm>,
+) -> AppResult<Response> {
+    let (repository, _o, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    if !access.can_admin() {
+        return Err(AppError::forbidden());
+    }
+    let created_by = viewer.map(|u| u.id);
+    let name = form.name.trim();
+    let public_key = form.public_key.trim();
+    if name.is_empty() || public_key.is_empty() {
+        return Err(AppError::bad("name and public key required"));
+    }
+    let fp = fingerprint_ssh_pubkey(public_key).map_err(|e| AppError::bad(e.to_string()))?;
+    let read_only = !checkbox(&form.write_access);
+    crate::db::deploy_keys::add_deploy_key(
+        &state.pool,
+        repository.id,
+        name,
+        public_key,
+        &fp,
+        read_only,
+        created_by,
+    )
+    .await
+    .map_err(|e| AppError::bad(format!("could not add deploy key: {e}")))?;
+    Ok(redirect_see_other(&format!("/{owner}/{repo}/settings")))
+}
+
+pub async fn deploy_key_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo, id)): Path<(String, String, Uuid)>,
+) -> AppResult<Response> {
+    let (repository, _o, _viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    if !access.can_admin() {
+        return Err(AppError::forbidden());
+    }
+    crate::db::deploy_keys::delete_deploy_key(&state.pool, repository.id, id).await?;
     Ok(redirect_see_other(&format!("/{owner}/{repo}/settings")))
 }
 
