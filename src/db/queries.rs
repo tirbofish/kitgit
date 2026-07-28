@@ -1,7 +1,7 @@
 use super::models::*;
 use anyhow::Result;
 use chrono::{DateTime, NaiveDate, Utc};
-use sqlx::PgPool;
+use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 pub async fn upsert_user_from_oidc(
@@ -1252,22 +1252,50 @@ pub async fn create_issue(
 }
 
 pub async fn list_issues(pool: &PgPool, repo_id: Uuid, state: Option<&str>) -> Result<Vec<Issue>> {
-    if let Some(s) = state {
-        Ok(sqlx::query_as::<_, Issue>(
-            "SELECT * FROM issues WHERE repo_id = $1 AND state = $2 ORDER BY number DESC",
-        )
-        .bind(repo_id)
-        .bind(s)
-        .fetch_all(pool)
-        .await?)
-    } else {
-        Ok(sqlx::query_as::<_, Issue>(
-            "SELECT * FROM issues WHERE repo_id = $1 ORDER BY number DESC",
-        )
-        .bind(repo_id)
-        .fetch_all(pool)
-        .await?)
-    }
+    list_issues_filtered(pool, repo_id, state, None, None).await
+}
+
+pub async fn list_issues_filtered(
+    pool: &PgPool,
+    repo_id: Uuid,
+    state: Option<&str>,
+    label_id: Option<Uuid>,
+    milestone_id: Option<Uuid>,
+) -> Result<Vec<Issue>> {
+    Ok(sqlx::query_as::<_, Issue>(
+        r#"
+        SELECT i.* FROM issues i
+        WHERE i.repo_id = $1
+          AND ($2::text IS NULL OR i.state = $2)
+          AND ($3::uuid IS NULL OR i.milestone_id = $3)
+          AND (
+            $4::uuid IS NULL OR EXISTS (
+              SELECT 1 FROM issue_labels il
+              WHERE il.issue_id = i.id AND il.label_id = $4
+            )
+          )
+        ORDER BY i.number DESC
+        "#,
+    )
+    .bind(repo_id)
+    .bind(state)
+    .bind(milestone_id)
+    .bind(label_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn set_issue_milestone(
+    pool: &PgPool,
+    issue_id: Uuid,
+    milestone_id: Option<Uuid>,
+) -> Result<()> {
+    sqlx::query("UPDATE issues SET milestone_id = $2, updated_at = now() WHERE id = $1")
+        .bind(issue_id)
+        .bind(milestone_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 pub async fn get_issue(pool: &PgPool, repo_id: Uuid, number: i32) -> Result<Option<Issue>> {
@@ -1340,22 +1368,50 @@ pub async fn create_pull_ex(
 }
 
 pub async fn list_pulls(pool: &PgPool, repo_id: Uuid, state: Option<&str>) -> Result<Vec<PullRequest>> {
-    if let Some(s) = state {
-        Ok(sqlx::query_as::<_, PullRequest>(
-            "SELECT * FROM pull_requests WHERE repo_id = $1 AND state = $2 ORDER BY number DESC",
-        )
-        .bind(repo_id)
-        .bind(s)
-        .fetch_all(pool)
-        .await?)
-    } else {
-        Ok(sqlx::query_as::<_, PullRequest>(
-            "SELECT * FROM pull_requests WHERE repo_id = $1 ORDER BY number DESC",
-        )
-        .bind(repo_id)
-        .fetch_all(pool)
-        .await?)
-    }
+    list_pulls_filtered(pool, repo_id, state, None, None).await
+}
+
+pub async fn list_pulls_filtered(
+    pool: &PgPool,
+    repo_id: Uuid,
+    state: Option<&str>,
+    label_id: Option<Uuid>,
+    milestone_id: Option<Uuid>,
+) -> Result<Vec<PullRequest>> {
+    Ok(sqlx::query_as::<_, PullRequest>(
+        r#"
+        SELECT p.* FROM pull_requests p
+        WHERE p.repo_id = $1
+          AND ($2::text IS NULL OR p.state = $2)
+          AND ($3::uuid IS NULL OR p.milestone_id = $3)
+          AND (
+            $4::uuid IS NULL OR EXISTS (
+              SELECT 1 FROM pull_labels pl
+              WHERE pl.pull_id = p.id AND pl.label_id = $4
+            )
+          )
+        ORDER BY p.number DESC
+        "#,
+    )
+    .bind(repo_id)
+    .bind(state)
+    .bind(milestone_id)
+    .bind(label_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn set_pull_milestone(
+    pool: &PgPool,
+    pull_id: Uuid,
+    milestone_id: Option<Uuid>,
+) -> Result<()> {
+    sqlx::query("UPDATE pull_requests SET milestone_id = $2, updated_at = now() WHERE id = $1")
+        .bind(pull_id)
+        .bind(milestone_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 pub async fn get_pull(pool: &PgPool, repo_id: Uuid, number: i32) -> Result<Option<PullRequest>> {
@@ -1615,7 +1671,7 @@ pub async fn rewrite_asset_paths_for_tag(
 }
 
 
-// ── stars / watches / forks ──────────────────────────────────────────────────
+// ΓöÇΓöÇ stars / watches / forks ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 pub async fn toggle_star(pool: &PgPool, repo_id: Uuid, user_id: Uuid) -> Result<bool> {
     let existing: Option<(Uuid,)> = sqlx::query_as(
@@ -1861,7 +1917,7 @@ pub async fn get_fork_of_user(pool: &PgPool, fork_of_id: Uuid, owner_id: Uuid) -
     .await?)
 }
 
-// ── reactions ────────────────────────────────────────────────────────────────
+// ΓöÇΓöÇ reactions ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 pub async fn toggle_reaction(
     pool: &PgPool,
@@ -1928,7 +1984,7 @@ pub async fn list_reaction_counts(
     Ok(rows.into_iter().map(|r| (r.emoji, r.count, r.mine)).collect())
 }
 
-// ── branch rules ─────────────────────────────────────────────────────────────
+// ΓöÇΓöÇ branch rules ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 pub async fn list_branch_rules(pool: &PgPool, repo_id: Uuid) -> Result<Vec<BranchRule>> {
     Ok(sqlx::query_as::<_, BranchRule>(
@@ -1972,7 +2028,7 @@ pub async fn delete_branch_rule(pool: &PgPool, id: Uuid, repo_id: Uuid) -> Resul
     Ok(())
 }
 
-// ── user emails / privacy / sessions / gpg ───────────────────────────────────
+// ΓöÇΓöÇ user emails / privacy / sessions / gpg ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 pub async fn update_username(pool: &PgPool, id: Uuid, username: &str) -> Result<User> {
     Ok(sqlx::query_as::<_, User>(
@@ -2348,4 +2404,386 @@ pub async fn lfs_object_size(pool: &PgPool, oid: &str) -> Result<Option<i64>> {
         .fetch_optional(pool)
         .await?;
     Ok(row.map(|r| r.0))
+}
+
+// ── labels & milestones ──────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, FromRow)]
+struct IssueLabelRow {
+    issue_id: Uuid,
+    id: Uuid,
+    repo_id: Uuid,
+    name: String,
+    color: String,
+    description: String,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow)]
+struct PullLabelRow {
+    pull_id: Uuid,
+    id: Uuid,
+    repo_id: Uuid,
+    name: String,
+    color: String,
+    description: String,
+    created_at: DateTime<Utc>,
+}
+
+impl From<IssueLabelRow> for (Uuid, Label) {
+    fn from(r: IssueLabelRow) -> Self {
+        (
+            r.issue_id,
+            Label {
+                id: r.id,
+                repo_id: r.repo_id,
+                name: r.name,
+                color: r.color,
+                description: r.description,
+                created_at: r.created_at,
+            },
+        )
+    }
+}
+
+impl From<PullLabelRow> for (Uuid, Label) {
+    fn from(r: PullLabelRow) -> Self {
+        (
+            r.pull_id,
+            Label {
+                id: r.id,
+                repo_id: r.repo_id,
+                name: r.name,
+                color: r.color,
+                description: r.description,
+                created_at: r.created_at,
+            },
+        )
+    }
+}
+
+pub async fn list_labels(pool: &PgPool, repo_id: Uuid) -> Result<Vec<Label>> {
+    Ok(sqlx::query_as::<_, Label>(
+        "SELECT * FROM labels WHERE repo_id = $1 ORDER BY lower(name)",
+    )
+    .bind(repo_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn get_label(pool: &PgPool, repo_id: Uuid, id: Uuid) -> Result<Option<Label>> {
+    Ok(
+        sqlx::query_as::<_, Label>("SELECT * FROM labels WHERE repo_id = $1 AND id = $2")
+            .bind(repo_id)
+            .bind(id)
+            .fetch_optional(pool)
+            .await?,
+    )
+}
+
+pub async fn create_label(
+    pool: &PgPool,
+    repo_id: Uuid,
+    name: &str,
+    color: &str,
+    description: &str,
+) -> Result<Label> {
+    Ok(sqlx::query_as::<_, Label>(
+        r#"
+        INSERT INTO labels (repo_id, name, color, description)
+        VALUES ($1, $2, $3, $4) RETURNING *
+        "#,
+    )
+    .bind(repo_id)
+    .bind(name)
+    .bind(color)
+    .bind(description)
+    .fetch_one(pool)
+    .await?)
+}
+
+pub async fn update_label(
+    pool: &PgPool,
+    id: Uuid,
+    name: &str,
+    color: &str,
+    description: &str,
+) -> Result<Label> {
+    Ok(sqlx::query_as::<_, Label>(
+        r#"
+        UPDATE labels SET name = $2, color = $3, description = $4
+        WHERE id = $1 RETURNING *
+        "#,
+    )
+    .bind(id)
+    .bind(name)
+    .bind(color)
+    .bind(description)
+    .fetch_one(pool)
+    .await?)
+}
+
+pub async fn delete_label(pool: &PgPool, id: Uuid) -> Result<()> {
+    sqlx::query("DELETE FROM labels WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn list_milestones(
+    pool: &PgPool,
+    repo_id: Uuid,
+    state: Option<&str>,
+) -> Result<Vec<Milestone>> {
+    if let Some(s) = state {
+        Ok(sqlx::query_as::<_, Milestone>(
+            "SELECT * FROM milestones WHERE repo_id = $1 AND state = $2 ORDER BY due_on NULLS LAST, lower(title)",
+        )
+        .bind(repo_id)
+        .bind(s)
+        .fetch_all(pool)
+        .await?)
+    } else {
+        Ok(sqlx::query_as::<_, Milestone>(
+            "SELECT * FROM milestones WHERE repo_id = $1 ORDER BY state ASC, due_on NULLS LAST, lower(title)",
+        )
+        .bind(repo_id)
+        .fetch_all(pool)
+        .await?)
+    }
+}
+
+pub async fn list_open_milestones(pool: &PgPool, repo_id: Uuid) -> Result<Vec<Milestone>> {
+    list_milestones(pool, repo_id, Some("open")).await
+}
+
+pub async fn get_milestone(pool: &PgPool, repo_id: Uuid, id: Uuid) -> Result<Option<Milestone>> {
+    Ok(
+        sqlx::query_as::<_, Milestone>("SELECT * FROM milestones WHERE repo_id = $1 AND id = $2")
+            .bind(repo_id)
+            .bind(id)
+            .fetch_optional(pool)
+            .await?,
+    )
+}
+
+pub async fn create_milestone(
+    pool: &PgPool,
+    repo_id: Uuid,
+    title: &str,
+    description: &str,
+    due_on: Option<NaiveDate>,
+) -> Result<Milestone> {
+    Ok(sqlx::query_as::<_, Milestone>(
+        r#"
+        INSERT INTO milestones (repo_id, title, description, due_on)
+        VALUES ($1, $2, $3, $4) RETURNING *
+        "#,
+    )
+    .bind(repo_id)
+    .bind(title)
+    .bind(description)
+    .bind(due_on)
+    .fetch_one(pool)
+    .await?)
+}
+
+pub async fn update_milestone(
+    pool: &PgPool,
+    id: Uuid,
+    title: &str,
+    description: &str,
+    due_on: Option<NaiveDate>,
+) -> Result<Milestone> {
+    Ok(sqlx::query_as::<_, Milestone>(
+        r#"
+        UPDATE milestones SET
+            title = $2,
+            description = $3,
+            due_on = $4,
+            updated_at = now()
+        WHERE id = $1
+        RETURNING *
+        "#,
+    )
+    .bind(id)
+    .bind(title)
+    .bind(description)
+    .bind(due_on)
+    .fetch_one(pool)
+    .await?)
+}
+
+pub async fn set_milestone_state(pool: &PgPool, id: Uuid, state: &str) -> Result<Milestone> {
+    let closed = if state == "closed" {
+        Some(Utc::now())
+    } else {
+        None
+    };
+    Ok(sqlx::query_as::<_, Milestone>(
+        r#"
+        UPDATE milestones SET
+            state = $2,
+            closed_at = $3,
+            updated_at = now()
+        WHERE id = $1
+        RETURNING *
+        "#,
+    )
+    .bind(id)
+    .bind(state)
+    .bind(closed)
+    .fetch_one(pool)
+    .await?)
+}
+
+pub async fn delete_milestone(pool: &PgPool, id: Uuid) -> Result<()> {
+    sqlx::query("DELETE FROM milestones WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn list_issue_labels(pool: &PgPool, issue_id: Uuid) -> Result<Vec<Label>> {
+    Ok(sqlx::query_as::<_, Label>(
+        r#"
+        SELECT l.* FROM labels l
+        JOIN issue_labels il ON il.label_id = l.id
+        WHERE il.issue_id = $1
+        ORDER BY lower(l.name)
+        "#,
+    )
+    .bind(issue_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn list_pull_labels(pool: &PgPool, pull_id: Uuid) -> Result<Vec<Label>> {
+    Ok(sqlx::query_as::<_, Label>(
+        r#"
+        SELECT l.* FROM labels l
+        JOIN pull_labels pl ON pl.label_id = l.id
+        WHERE pl.pull_id = $1
+        ORDER BY lower(l.name)
+        "#,
+    )
+    .bind(pull_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn set_issue_labels(pool: &PgPool, issue_id: Uuid, label_ids: &[Uuid]) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM issue_labels WHERE issue_id = $1")
+        .bind(issue_id)
+        .execute(&mut *tx)
+        .await?;
+    for id in label_ids {
+        sqlx::query(
+            "INSERT INTO issue_labels (issue_id, label_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        )
+        .bind(issue_id)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    }
+    sqlx::query("UPDATE issues SET updated_at = now() WHERE id = $1")
+        .bind(issue_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn set_pull_labels(pool: &PgPool, pull_id: Uuid, label_ids: &[Uuid]) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM pull_labels WHERE pull_id = $1")
+        .bind(pull_id)
+        .execute(&mut *tx)
+        .await?;
+    for id in label_ids {
+        sqlx::query(
+            "INSERT INTO pull_labels (pull_id, label_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        )
+        .bind(pull_id)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    }
+    sqlx::query("UPDATE pull_requests SET updated_at = now() WHERE id = $1")
+        .bind(pull_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn labels_for_issues(pool: &PgPool, issue_ids: &[Uuid]) -> Result<Vec<(Uuid, Label)>> {
+    if issue_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query_as::<_, IssueLabelRow>(
+        r#"
+        SELECT il.issue_id, l.id, l.repo_id, l.name, l.color, l.description, l.created_at
+        FROM issue_labels il
+        JOIN labels l ON l.id = il.label_id
+        WHERE il.issue_id = ANY($1)
+        ORDER BY lower(l.name)
+        "#,
+    )
+    .bind(issue_ids)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(Into::into).collect())
+}
+
+pub async fn labels_for_pulls(pool: &PgPool, pull_ids: &[Uuid]) -> Result<Vec<(Uuid, Label)>> {
+    if pull_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query_as::<_, PullLabelRow>(
+        r#"
+        SELECT pl.pull_id, l.id, l.repo_id, l.name, l.color, l.description, l.created_at
+        FROM pull_labels pl
+        JOIN labels l ON l.id = pl.label_id
+        WHERE pl.pull_id = ANY($1)
+        ORDER BY lower(l.name)
+        "#,
+    )
+    .bind(pull_ids)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(Into::into).collect())
+}
+
+pub async fn get_milestones_by_ids(pool: &PgPool, ids: &[Uuid]) -> Result<Vec<Milestone>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(sqlx::query_as::<_, Milestone>(
+        "SELECT * FROM milestones WHERE id = ANY($1)",
+    )
+    .bind(ids)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn filter_repo_label_ids(
+    pool: &PgPool,
+    repo_id: Uuid,
+    label_ids: &[Uuid],
+) -> Result<Vec<Uuid>> {
+    if label_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM labels WHERE repo_id = $1 AND id = ANY($2)",
+    )
+    .bind(repo_id)
+    .bind(label_ids)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|r| r.0).collect())
 }

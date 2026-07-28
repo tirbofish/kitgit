@@ -1,0 +1,19 @@
+{% extends "layout.html" %}
+{% block title %}milestones · {{ owner.username }}/{{ repo.name }} — kitgit{% endblock %}
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title"><a href="/{{ owner.username }}/{{ repo.name }}">{{ owner.username }}/{{ repo.name }}</a> · milestones</h1>
+  {% let tab = "settings" %}
+  {% let archive_ref = repo.default_branch %}
+  {% include "partials/repo_tabs.html" %}
+  {% if let Some(err) = error %}<div class="kg-flash">{{ err }}</div>{% endif %}
+  <div class="kg-actions">
+    <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/milestones?state=open"{% if state_filter == "open" %} aria-current="page"{% endif %}>open</a>
+    <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/milestones?state=closed"{% if state_filter == "closed" %} aria-current="page"{% endif %}>closed</a>
+    <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/labels">labels</a>
+  </div>
+  {% if milestones.is_empty() %}<p class="kg-muted">No {{ state_filter }} milestones.</p>{% else %}
+  <ul class="kg-list">{% for m in milestones %}<li><span><span class="kg-badge {% if m.state == "open" %}kg-badge--open{% else %}kg-badge--closed{% endif %}">{{ m.state }}</span> <strong>{{ m.title }}</strong>{% if let Some(due) = m.due_on %} <span class="kg-meta">due {{ due }}</span>{% endif %}</span>{% if access.can_admin() %}<span class="kg-actions">{% if m.state == "open" %}<form method="post" action="/{{ owner.username }}/{{ repo.name }}/milestones/{{ m.id }}/close"><button class="kg-btn kg-btn--ghost" type="submit">close</button></form>{% else %}<form method="post" action="/{{ owner.username }}/{{ repo.name }}/milestones/{{ m.id }}/reopen"><button class="kg-btn kg-btn--ghost" type="submit">reopen</button></form>{% endif %}<form method="post" action="/{{ owner.username }}/{{ repo.name }}/milestones/{{ m.id }}/delete"><button class="kg-btn kg-btn--danger-ghost" type="submit">delete</button></form></span>{% endif %}</li>{% endfor %}</ul>{% endif %}
+  {% if access.can_admin() %}<form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/milestones"><span class="kg-kicker">new milestone</span><label>title <input name="title" required /></label><label>due on <input type="date" name="due_on" /></label><label>description <textarea name="description" rows="3"></textarea></label><button class="kg-btn" type="submit">create milestone</button></form>{% endif %}
+</section>
+{% endblock %}

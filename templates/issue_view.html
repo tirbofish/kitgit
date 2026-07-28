@@ -12,46 +12,101 @@
   {% let archive_ref = repo.default_branch %}
   {% include "partials/repo_tabs.html" %}
 
-  <article class="kg-comment">
-    <header>
-      <span>
-        <img class="kg-avatar kg-avatar--sm" src="{{ author_avatar }}" alt="" />
-        <a href="/{{ author.username }}">{{ author.username }}</a>
-      </span>
-      <span>{{ issue.created_at }}</span>
-    </header>
-    <div class="kg-readme">{{ body_html|safe }}</div>
-  </article>
+  <div class="kg-issue-layout">
+    <div class="kg-issue-main">
+      <article class="kg-comment">
+        <header>
+          <span>
+            <img class="kg-avatar kg-avatar--sm" src="{{ author_avatar }}" alt="" />
+            <a href="/{{ author.username }}">{{ author.username }}</a>
+          </span>
+          <span>{{ issue.created_at }}</span>
+        </header>
+        <div class="kg-readme">{{ body_html|safe }}</div>
+      </article>
 
-  {% for c in comments %}
-  <article class="kg-comment">
-    <header>
-      <span>
-        <img class="kg-avatar kg-avatar--sm" src="{{ c.avatar_url }}" alt="" />
-        <a href="/{{ c.author.username }}">{{ c.author.username }}</a>
-      </span>
-      <span>{{ c.created_at }}</span>
-    </header>
-    <div class="kg-readme">{{ c.body_html|safe }}</div>
-    {% include "partials/reactions.html" %}
-  </article>
-  {% endfor %}
+      {% for c in comments %}
+      <article class="kg-comment">
+        <header>
+          <span>
+            <img class="kg-avatar kg-avatar--sm" src="{{ c.avatar_url }}" alt="" />
+            <a href="/{{ c.author.username }}">{{ c.author.username }}</a>
+          </span>
+          <span>{{ c.created_at }}</span>
+        </header>
+        <div class="kg-readme">{{ c.body_html|safe }}</div>
+        {% include "partials/reactions.html" %}
+      </article>
+      {% endfor %}
 
-  {% if viewer.is_some() %}
-    <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/issues/{{ issue.number }}">
-      <label>
-        comment
-        <textarea name="body" rows="4" required></textarea>
-      </label>
-      <div class="kg-actions">
-        <button class="kg-btn" type="submit">comment</button>
-        {% if issue.state == "open" %}
-          <button class="kg-btn kg-btn--ghost" formaction="/{{ owner.username }}/{{ repo.name }}/issues/{{ issue.number }}/close" formmethod="post" type="submit" formnovalidate>close</button>
+      {% if viewer.is_some() %}
+        <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/issues/{{ issue.number }}">
+          <label>
+            comment
+            <textarea name="body" rows="4" required></textarea>
+          </label>
+          <div class="kg-actions">
+            <button class="kg-btn" type="submit">comment</button>
+            {% if issue.state == "open" %}
+              <button class="kg-btn kg-btn--ghost" formaction="/{{ owner.username }}/{{ repo.name }}/issues/{{ issue.number }}/close" formmethod="post" type="submit" formnovalidate>close</button>
+            {% else %}
+              <button class="kg-btn kg-btn--ghost" formaction="/{{ owner.username }}/{{ repo.name }}/issues/{{ issue.number }}/reopen" formmethod="post" type="submit" formnovalidate>reopen</button>
+            {% endif %}
+          </div>
+        </form>
+      {% endif %}
+    </div>
+
+    <aside class="kg-issue-sidebar">
+      <div class="kg-sidebar-block">
+        <h2 class="kg-kicker">labels</h2>
+        {% if labels.is_empty() %}
+          <p class="kg-muted">None yet.</p>
         {% else %}
-          <button class="kg-btn kg-btn--ghost" formaction="/{{ owner.username }}/{{ repo.name }}/issues/{{ issue.number }}/reopen" formmethod="post" type="submit" formnovalidate>reopen</button>
+          <div class="kg-label-row">
+            {% for l in labels %}
+              <span class="kg-label-chip" style="background:{{ l.bg_color() }};color:{{ l.text_color() }}">{{ l.name }}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+        {% if can_triage %}
+          <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/issues/{{ issue.number }}/labels">
+            {% for opt in label_options %}
+              <label class="row">
+                <input type="checkbox" name="label_id" value="{{ opt.label.id }}"{% if opt.selected %} checked{% endif %} />
+                <span class="kg-label-chip" style="background:{{ opt.label.bg_color() }};color:{{ opt.label.text_color() }}">{{ opt.label.name }}</span>
+              </label>
+            {% endfor %}
+            {% if !label_options.is_empty() %}
+              <button class="kg-btn kg-btn--ghost" type="submit">save labels</button>
+            {% else %}
+              <p class="kg-muted"><a href="/{{ owner.username }}/{{ repo.name }}/labels">Manage labels</a></p>
+            {% endif %}
+          </form>
         {% endif %}
       </div>
-    </form>
-  {% endif %}
+      <div class="kg-sidebar-block">
+        <h2 class="kg-kicker">milestone</h2>
+        {% if let Some(m) = milestone %}
+          <p>{{ m.title }}{% if let Some(due) = m.due_on %} · due {{ due }}{% endif %}</p>
+        {% else %}
+          <p class="kg-muted">No milestone</p>
+        {% endif %}
+        {% if can_triage %}
+          <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/issues/{{ issue.number }}/milestone">
+            <label>
+              <select name="milestone_id">
+                <option value="">none</option>
+                {% for opt in milestone_options %}
+                  <option value="{{ opt.milestone.id }}"{% if opt.selected %} selected{% endif %}>{{ opt.milestone.title }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <button class="kg-btn kg-btn--ghost" type="submit">save milestone</button>
+          </form>
+        {% endif %}
+      </div>
+    </aside>
+  </div>
 </section>
 {% endblock %}

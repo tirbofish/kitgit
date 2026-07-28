@@ -146,6 +146,15 @@
   </div>
 
   <div class="kg-settings-section">
+    <span class="kg-kicker">labels & milestones</span>
+    <p class="kg-muted">Organize issues and pull requests.</p>
+    <div class="kg-actions">
+      <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/labels">manage labels</a>
+      <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/milestones">manage milestones</a>
+    </div>
+  </div>
+
+  <div class="kg-settings-section">
     <span class="kg-kicker">collaborators</span>
     {% if collaborators.is_empty() %}
       <p class="kg-muted">No collaborators.</p>
