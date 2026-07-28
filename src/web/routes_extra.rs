@@ -800,6 +800,114 @@ pub async fn gpg_delete(
     Ok(redirect_see_other("/settings/keys"))
 }
 
+fn can_manage_mirror(access: crate::db::models::Access, viewer: &Option<crate::db::models::User>) -> bool {
+    access.can_admin() || viewer.as_ref().map(|u| u.is_site_admin).unwrap_or(false)
+}
+
+fn truncate_err(msg: &str) -> String {
+    const MAX: usize = 2000;
+    let msg = msg.trim();
+    if msg.len() <= MAX {
+        msg.to_string()
+    } else {
+        format!("{}…", &msg[..MAX])
+    }
+}
+
+#[derive(Deserialize)]
+pub struct MirrorForm {
+    pub remote_url: String,
+    pub enabled: Option<String>,
+}
+
+pub async fn mirror_save(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+    Form(form): Form<MirrorForm>,
+) -> AppResult<Response> {
+    let (repository, _, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let user = viewer.as_ref().ok_or_else(AppError::unauthorized)?;
+    if !can_manage_mirror(access, &viewer) {
+        return Err(AppError::forbidden());
+    }
+    let url = form.remote_url.trim();
+    if url.is_empty() {
+        return Err(AppError::bad("mirror URL required"));
+    }
+    if !git::is_safe_mirror_url(url) {
+        return Err(AppError::bad(
+            "mirror URL must be http(s), git://, ssh://, or git@host:path",
+        ));
+    }
+    queries::upsert_repo_mirror(
+        &state.pool,
+        repository.id,
+        url,
+        checkbox(&form.enabled),
+        user.id,
+    )
+    .await?;
+    Ok(redirect_see_other(&format!("/{owner}/{repo}/settings")))
+}
+
+pub async fn mirror_sync(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+) -> AppResult<Response> {
+    let (repository, _, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let _user = viewer.as_ref().ok_or_else(AppError::unauthorized)?;
+    if !can_manage_mirror(access, &viewer) {
+        return Err(AppError::forbidden());
+    }
+    let mirror = queries::get_repo_mirror(&state.pool, repository.id)
+        .await?
+        .ok_or_else(|| AppError::bad("no mirror configured"))?;
+    if !mirror.enabled {
+        return Err(AppError::bad("mirror is disabled"));
+    }
+
+    let repos_dir = state.config.repos_dir();
+    let owner_s = owner.clone();
+    let repo_s = repo.clone();
+    let remote_url = mirror.remote_url.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        git::mirror_fetch(&repos_dir, &owner_s, &repo_s, &remote_url)
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("mirror sync join: {e}")))?;
+
+    match result {
+        Ok(()) => {
+            queries::set_mirror_sync_result(&state.pool, repository.id, true, None).await?;
+        }
+        Err(e) => {
+            let msg = truncate_err(&format!("{e:#}"));
+            queries::set_mirror_sync_result(&state.pool, repository.id, false, Some(&msg)).await?;
+            return Err(AppError::bad(format!("mirror sync failed: {msg}")));
+        }
+    }
+    Ok(redirect_see_other(&format!("/{owner}/{repo}/settings")))
+}
+
+pub async fn mirror_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+) -> AppResult<Response> {
+    let (repository, _, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let _user = viewer.as_ref().ok_or_else(AppError::unauthorized)?;
+    if !can_manage_mirror(access, &viewer) {
+        return Err(AppError::forbidden());
+    }
+    queries::delete_repo_mirror(&state.pool, repository.id).await?;
+    Ok(redirect_see_other(&format!("/{owner}/{repo}/settings")))
+}
+
 // silence unused import warning for avatar_url_for if not used
 #[allow(dead_code)]
 fn _use_avatar(u: &crate::db::models::User) -> String {

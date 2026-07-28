@@ -1,7 +1,7 @@
 use crate::og::SocialMeta;
 use crate::db::models::{
-    Access, BranchRule, CommitDay, GpgKey, Issue, PullRequest, Release, Repository, SshKey, User,
-    UserEmail,
+    Access, BranchRule, CommitDay, GpgKey, Issue, PullRequest, Release, RepoMirror, Repository,
+    SshKey, User, UserEmail,
 };
 use askama::Template;
 use askama_web::WebTemplate;
@@ -521,6 +521,7 @@ pub struct RepoSettingsTemplate {
     pub collaborators: Vec<CollaboratorView>,
     pub branches: Vec<String>,
     pub branch_rules: Vec<BranchRule>,
+    pub mirror: Option<RepoMirror>,
     pub clone_http: String,
     pub clone_ssh: String,
     pub is_site_admin: bool,

@@ -79,6 +79,83 @@ pub fn rename_branch(repo: &G2Repo, old: &str, new: &str) -> Result<()> {
     Ok(())
 }
 
+/// Whether `url` is an allowed remote for pull-mirroring (no local/file paths).
+pub fn is_safe_mirror_url(url: &str) -> bool {
+    let url = url.trim();
+    if url.is_empty() || url.contains('\0') || url.contains('\n') || url.contains('\r') {
+        return false;
+    }
+    let lower = url.to_ascii_lowercase();
+    if lower.starts_with("file:")
+        || lower.starts_with('/')
+        || lower.starts_with("\\\\")
+        || (url.len() >= 2 && url.as_bytes()[1] == b':')
+    {
+        return false;
+    }
+    lower.starts_with("https://")
+        || lower.starts_with("http://")
+        || lower.starts_with("git://")
+        || lower.starts_with("ssh://")
+        || (url.contains('@') && url.contains(':') && !lower.contains("://"))
+}
+
+/// Fetch refs from `remote_url` into the existing bare repo (pull mirror).
+pub fn mirror_fetch(repos_root: &Path, owner: &str, name: &str, remote_url: &str) -> Result<()> {
+    if !is_safe_mirror_url(remote_url) {
+        return Err(anyhow!("unsupported or unsafe mirror URL"));
+    }
+    let path = bare_path(repos_root, owner, name);
+    if !path.exists() {
+        return Err(anyhow!("local bare repository missing"));
+    }
+    let path_str = path
+        .to_str()
+        .ok_or_else(|| anyhow!("repository path is not valid UTF-8"))?;
+    let url = remote_url.trim();
+
+    // Dedicated remote so we do not clobber a user's `origin`.
+    let _ = std::process::Command::new("git")
+        .args(["-C", path_str, "remote", "remove", "kitgit-mirror"])
+        .output();
+    let add = std::process::Command::new("git")
+        .args(["-C", path_str, "remote", "add", "kitgit-mirror", url])
+        .output()
+        .with_context(|| "git remote add")?;
+    if !add.status.success() {
+        return Err(anyhow!(
+            "git remote add failed: {}",
+            String::from_utf8_lossy(&add.stderr).trim()
+        ));
+    }
+
+    let fetch = std::process::Command::new("git")
+        .args([
+            "-C",
+            path_str,
+            "fetch",
+            "kitgit-mirror",
+            "+refs/heads/*:refs/heads/*",
+            "+refs/tags/*:refs/tags/*",
+            "--prune",
+            "--force",
+        ])
+        .output()
+        .with_context(|| "git fetch mirror")?;
+    if !fetch.status.success() {
+        return Err(anyhow!(
+            "git fetch failed: {}",
+            String::from_utf8_lossy(&fetch.stderr).trim()
+        ));
+    }
+
+    if let Ok(repo) = G2Repo::open_bare(&path) {
+        let _ = repo.config()?.set_bool("http.receivepack", true);
+        let _ = repo.config()?.set_bool("http.uploadpack", true);
+    }
+    Ok(())
+}
+
 /// Copy a bare repository on disk (for forks).
 pub fn clone_bare(src: &Path, dest: &Path) -> Result<()> {
     if dest.exists() {

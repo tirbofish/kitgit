@@ -146,6 +146,64 @@
   </div>
 
   <div class="kg-settings-section">
+    <span class="kg-kicker">mirror</span>
+    <p class="kg-muted">Pull from another remote into this repository (fetch heads and tags).</p>
+    {% if let Some(m) = mirror %}
+      <p class="kg-meta" style="margin:0.5rem 0">
+        {% if m.enabled %}
+          <span class="kg-badge">enabled</span>
+        {% else %}
+          <span class="kg-badge">disabled</span>
+        {% endif %}
+        {% if let Some(synced) = m.last_synced_at %}
+          · last synced {{ synced }}
+        {% else %}
+          · never synced
+        {% endif %}
+      </p>
+      {% if let Some(err) = m.last_error %}
+        <div class="kg-flash">{{ err }}</div>
+      {% endif %}
+      <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/settings/mirror" style="margin-top:1rem">
+        <label>
+          remote URL
+          <input type="text" name="remote_url" required value="{{ m.remote_url }}" placeholder="https://github.com/org/repo.git" />
+        </label>
+        <label class="row">
+          <input type="checkbox" name="enabled"{% if m.enabled %} checked{% endif %} />
+          enabled
+        </label>
+        <div class="kg-actions">
+          <button class="kg-btn" type="submit">save mirror</button>
+        </div>
+      </form>
+      <div class="kg-actions" style="margin-top:0.75rem;gap:0.5rem;display:flex;flex-wrap:wrap">
+        <form method="post" action="/{{ owner.username }}/{{ repo.name }}/settings/mirror/sync">
+          <button class="kg-btn kg-btn--ghost" type="submit">sync now</button>
+        </form>
+        <form method="post" action="/{{ owner.username }}/{{ repo.name }}/settings/mirror/delete">
+          <button class="kg-btn kg-btn--danger-ghost" type="submit">remove mirror</button>
+        </form>
+      </div>
+    {% else %}
+      <p class="kg-muted">No mirror configured.</p>
+      <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/settings/mirror" style="margin-top:1rem">
+        <label>
+          remote URL
+          <input type="text" name="remote_url" required placeholder="https://github.com/org/repo.git" />
+        </label>
+        <label class="row">
+          <input type="checkbox" name="enabled" checked />
+          enabled
+        </label>
+        <div class="kg-actions">
+          <button class="kg-btn" type="submit">save mirror</button>
+        </div>
+      </form>
+    {% endif %}
+  </div>
+
+  <div class="kg-settings-section">
     <span class="kg-kicker">collaborators</span>
     {% if collaborators.is_empty() %}
       <p class="kg-muted">No collaborators.</p>
