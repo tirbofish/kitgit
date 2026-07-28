@@ -3,6 +3,7 @@ use crate::db::models::{
     Access, BranchRule, CommitDay, GpgKey, Issue, PullRequest, Release, Repository, SshKey, User,
     UserEmail,
 };
+use crate::db::DeployKey;
 use askama::Template;
 use askama_web::WebTemplate;
 use chrono::{DateTime, Utc};
@@ -521,6 +522,7 @@ pub struct RepoSettingsTemplate {
     pub collaborators: Vec<CollaboratorView>,
     pub branches: Vec<String>,
     pub branch_rules: Vec<BranchRule>,
+    pub deploy_keys: Vec<DeployKey>,
     pub clone_http: String,
     pub clone_ssh: String,
     pub is_site_admin: bool,
