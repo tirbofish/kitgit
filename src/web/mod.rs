@@ -88,6 +88,19 @@ pub fn app_router(state: AppState) -> Router {
         )
         .route("/admin/repos/{id}/delete", post(routes::admin_repo_delete))
         .route("/site-banner.json", get(routes::site_banner_json))
+        .route("/notifications", get(routes::notifications_list))
+        .route(
+            "/notifications/unread.json",
+            get(routes::notifications_unread_json),
+        )
+        .route(
+            "/notifications/read-all",
+            post(routes::notifications_mark_all_read),
+        )
+        .route(
+            "/notifications/{id}/read",
+            post(routes::notifications_mark_read),
+        )
         .route("/new", get(routes::new_repo_form).post(routes::new_repo))
         .route(
             "/settings/profile",

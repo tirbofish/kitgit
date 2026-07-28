@@ -23,6 +23,11 @@
         <a href="/explore"><span class="kg-icon" style="--icon:url('/static/icons/code.svg')"></span> explore</a>
         {% if let Some(u) = viewer %}
           <a href="/new"><span class="kg-icon" style="--icon:url('/static/icons/plus.svg')"></span> new</a>
+          <a id="kg-nav-notifications" href="/notifications">
+            <span class="kg-icon" style="--icon:url('/static/icons/bell.svg')"></span>
+            notifications
+            <span id="kg-notif-count" class="kg-notif-count" hidden></span>
+          </a>
           {% if u.is_site_admin %}<a href="/admin"><span class="kg-icon" style="--icon:url('/static/icons/settings.svg')"></span> admin</a>{% endif %}
           <a href="/settings/profile"><span class="kg-icon" style="--icon:url('/static/icons/user.svg')"></span> settings</a>
           <a class="kg-userchip" href="/{{ u.username }}">
@@ -52,6 +57,19 @@
         el.textContent = j.message;
         el.hidden = false;
       }
+    } catch (_) {}
+  })();
+  (async () => {
+    const badge = document.getElementById('kg-notif-count');
+    if (!badge) return;
+    try {
+      const r = await fetch('/notifications/unread.json', { credentials: 'same-origin' });
+      if (!r.ok) return;
+      const j = await r.json();
+      const n = Number(j && j.count);
+      if (!n) return;
+      badge.textContent = n > 99 ? '99+' : String(n);
+      badge.hidden = false;
     } catch (_) {}
   })();
   document.addEventListener('click', (e) => {

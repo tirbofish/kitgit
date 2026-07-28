@@ -234,6 +234,19 @@ pub struct CommitDay {
     pub count: i32,
 }
 
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct Notification {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub kind: String,
+    pub title: String,
+    pub body: String,
+    pub href: String,
+    pub repo_id: Option<Uuid>,
+    pub read_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Access {
