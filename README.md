@@ -1,0 +1,3 @@
+# kitgit
+
+Initialized on kitgit.
