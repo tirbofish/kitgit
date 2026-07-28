@@ -17,8 +17,19 @@ pub struct User {
     pub is_suspended: bool,
     pub show_email: bool,
     pub vigilant_mode: bool,
+    /// `light`, `dark`, or `system` (follows prefers-color-scheme).
+    pub theme: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+impl User {
+    pub fn theme_pref(&self) -> &str {
+        match self.theme.as_str() {
+            "light" | "dark" => self.theme.as_str(),
+            _ => "system",
+        }
+    }
 }
 
 #[derive(Debug, Clone, FromRow)]
