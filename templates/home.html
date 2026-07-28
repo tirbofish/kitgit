@@ -1,6 +1,10 @@
 {% extends "layout.html" %}
 
-{% block title %}kitgit{% endblock %}
+{% block title %}{{ social.title }}{% endblock %}
+
+{% block meta %}
+{% include "partials/social_meta.html" %}
+{% endblock %}
 
 {% block content %}
 {% if let Some(u) = viewer %}

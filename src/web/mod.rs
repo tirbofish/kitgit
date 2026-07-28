@@ -54,6 +54,7 @@ pub fn app_router(state: AppState) -> Router {
     let static_dir = state.config.static_dir.clone();
     Router::new()
         .route("/", get(routes::home))
+        .route("/og.png", get(routes::site_og_image))
         .route("/explore", get(routes::explore))
         .route(
             "/auth/login",
@@ -72,7 +73,21 @@ pub fn app_router(state: AppState) -> Router {
         .route("/auth/logout", get(routes::auth_logout))
         .route("/admin", get(routes::admin_panel))
         .route("/admin/users", post(routes::admin_set_user))
+        .route("/admin/users/suspend", post(routes::admin_set_suspended))
         .route("/admin/motd", post(routes::admin_save_motd))
+        .route("/admin/announcement", post(routes::admin_save_announcement))
+        .route("/admin/signups", post(routes::admin_save_signups))
+        .route("/admin/invites", post(routes::admin_create_invite))
+        .route(
+            "/admin/invites/{id}/revoke",
+            post(routes::admin_revoke_invite),
+        )
+        .route(
+            "/admin/repos/{id}/visibility",
+            post(routes::admin_repo_visibility),
+        )
+        .route("/admin/repos/{id}/delete", post(routes::admin_repo_delete))
+        .route("/site-banner.json", get(routes::site_banner_json))
         .route("/new", get(routes::new_repo_form).post(routes::new_repo))
         .route(
             "/settings/profile",
@@ -121,6 +136,7 @@ pub fn app_router(state: AppState) -> Router {
             get(routes::keys_settings).post(routes::keys_add),
         )
         .route("/settings/keys/{id}/delete", post(routes::keys_delete))
+        .route("/settings/keys/{id}/usage", post(routes::keys_update_usage))
         .route("/settings/gpg", post(routes_extra::gpg_add))
         .route("/settings/gpg/{id}/delete", post(routes_extra::gpg_delete))
         .route("/avatars/{user_id}", get(routes::avatar))
@@ -142,6 +158,7 @@ pub fn app_router(state: AppState) -> Router {
             get(git::lfs::lfs_download).put(git::lfs::lfs_upload),
         )
         .route("/{owner}/{repo}", get(routes::repo_home))
+        .route("/{owner}/{repo}/og.png", get(routes::repo_og_image))
         .route("/{owner}/{repo}/tree/{*rest}", get(routes::repo_tree))
         .route("/{owner}/{repo}/blob/{*rest}", get(routes::repo_blob))
         .route("/{owner}/{repo}/raw/{*rest}", get(routes_extra::repo_raw))

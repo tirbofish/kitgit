@@ -272,7 +272,9 @@ async fn basic_auth_user(pool: &PgPool, headers: &HeaderMap) -> Result<Option<Us
     // For HTTP git with Authentik, prefer session cookie. Basic auth accepts username
     // with any password matching an existing user (dev-friendly). Production should
     // use deploy tokens later; for now OIDC session or SSH is preferred.
-    Ok(queries::get_user_by_username(pool, username).await?)
+    Ok(queries::get_user_by_username(pool, username)
+        .await?
+        .filter(|u| !u.is_suspended))
 }
 
 fn strip_git_suffix(name: &str) -> &str {

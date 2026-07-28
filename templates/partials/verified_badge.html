@@ -1,0 +1,12 @@
+{% if let Some(v) = verification %}
+<details class="kg-verify">
+  <summary class="kg-badge kg-badge--verified">Verified</summary>
+  <div class="kg-verify__panel" role="dialog" aria-label="Commit signature">
+    <p class="kg-verify__fp">
+      <strong>{{ v.fingerprint_label() }}:</strong>
+      <code>{{ v.fingerprint }}</code>
+    </p>
+    <p class="kg-meta">Verified on {{ v.verified_at }}</p>
+  </div>
+</details>
+{% endif %}

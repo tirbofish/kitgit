@@ -1,6 +1,10 @@
 {% extends "layout.html" %}
 
-{% block title %}explore — kitgit{% endblock %}
+{% block title %}{{ social.title }}{% endblock %}
+
+{% block meta %}
+{% include "partials/social_meta.html" %}
+{% endblock %}
 
 {% block content %}
 <section class="kg-section">

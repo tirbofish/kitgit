@@ -255,6 +255,10 @@ pub async fn finish_login(auth: &AuthState, code: &str, state: &str) -> Result<(
     )
     .await?;
 
+    if user.is_suspended {
+        anyhow::bail!("account suspended");
+    }
+
     // First user to ever log in becomes site admin.
     if queries::site_admin_count(&auth.pool).await? == 0 {
         user = queries::set_site_admin(&auth.pool, user.id, true).await?;
@@ -826,6 +830,9 @@ async fn user_from_authentik_me(auth: &AuthState, me: &AuthentikMe) -> Result<Us
 }
 
 async fn create_kitgit_session(auth: &AuthState, user: &User) -> Result<(User, String)> {
+    if user.is_suspended {
+        anyhow::bail!("account suspended");
+    }
     let token = new_session_token();
     queries::create_session(&auth.pool, user.id, &hash_token(&token), 14).await?;
     Ok((user.clone(), token))
@@ -887,6 +894,9 @@ pub async fn login_with_password(
     password: &str,
 ) -> Result<LoginOutcome> {
     let user = verify_password(auth, username, password).await?;
+    if user.is_suspended {
+        anyhow::bail!("account suspended");
+    }
     if queries::mfa_is_enabled(&auth.pool, user.id).await? {
         let pending = new_session_token();
         queries::delete_mfa_pending_for_user(&auth.pool, user.id).await?;
@@ -940,6 +950,9 @@ pub async fn complete_mfa_login(
     let user = queries::get_user_by_id(&auth.pool, user_id)
         .await?
         .ok_or_else(|| anyhow!("user not found"))?;
+    if user.is_suspended {
+        anyhow::bail!("account suspended");
+    }
     create_kitgit_session(auth, &user).await
 }
 

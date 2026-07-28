@@ -1,6 +1,10 @@
 {% extends "layout.html" %}
 
-{% block title %}{{ owner.username }}/{{ repo.name }} — kitgit{% endblock %}
+{% block title %}{{ social.title }}{% endblock %}
+
+{% block meta %}
+{% include "partials/social_meta.html" %}
+{% endblock %}
 
 {% block head %}
 {% if readme_html.is_some() %}

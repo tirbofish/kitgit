@@ -8,6 +8,7 @@ use crate::git;
 use crate::git::ssh::fingerprint_ssh_pubkey;
 use crate::highlight::highlight;
 use crate::markdown::{MarkdownRepoBase, parent_dir, render_markdown, render_markdown_in_repo};
+use crate::og;
 use crate::state::AppState;
 use crate::web::templates::*;
 use axum::extract::{Form, Multipart, Path, Query, State};
@@ -599,11 +600,23 @@ fn build_diff_file(idx: usize, path: String, lines: &[String]) -> DiffFileView {
     }
 }
 
-fn latest_commit_view(grepo: &git2::Repository, branch: &str) -> Option<CommitView> {
-    git::list_commits(grepo, branch, 1)
+fn prepare_latest_commit(
+    grepo: &git2::Repository,
+    branch: &str,
+) -> Option<(git::CommitInfo, Option<(String, Vec<u8>)>)> {
+    let c = git::list_commits(grepo, branch, 1)
         .ok()
-        .and_then(|mut v| v.drain(..).next())
-        .map(commit_view)
+        .and_then(|mut v| v.drain(..).next())?;
+    let extracted = git::extract_commit_signature(grepo, &c.id);
+    Some((c, extracted))
+}
+
+async fn latest_commit_view(
+    state: &AppState,
+    prepared: Option<(git::CommitInfo, Option<(String, Vec<u8>)>)>,
+) -> Option<CommitView> {
+    let (c, extracted) = prepared?;
+    Some(commit_view(state, c, extracted).await)
 }
 
 fn clone_urls(state: &AppState, owner: &str, repo: &str) -> (String, String) {
@@ -830,6 +843,12 @@ pub async fn home(
             motd,
             my_repos: Vec::new(),
             activities: Vec::new(),
+            social: og::site_social_meta(
+                &state.config.public_url,
+                "/",
+                "kitgit - self-hosted git forge",
+                og::SITE_TAGLINE,
+            ),
         });
     };
 
@@ -843,6 +862,12 @@ pub async fn home(
         motd,
         my_repos,
         activities,
+        social: og::site_social_meta(
+            &state.config.public_url,
+            "/",
+            "kitgit - self-hosted git forge",
+            og::SITE_TAGLINE,
+        ),
     })
 }
 
@@ -872,10 +897,23 @@ pub async fn explore(
         .into_iter()
         .map(|(repo, owner)| ExploreRepo { owner, repo })
         .collect();
+    let social = if query.trim().is_empty() {
+        og::site_social_meta(
+            &state.config.public_url,
+            "/explore",
+            "explore repositories - kitgit",
+            "Browse public repositories on kitgit.",
+        )
+    } else {
+        let title = format!("search '{query}' - kitgit");
+        let desc = format!("Public repositories matching '{query}' on kitgit.");
+        og::site_social_meta(&state.config.public_url, "/explore", &title, &desc)
+    };
     Ok(ExploreTemplate {
         viewer,
         repos,
         query,
+        social,
     })
 }
 
@@ -984,16 +1022,38 @@ pub async fn auth_oidc_start() -> AppResult<Response> {
     Ok(redirect("/auth/login"))
 }
 
+#[derive(Deserialize)]
+pub struct SignupQuery {
+    pub invite: Option<String>,
+}
+
 pub async fn auth_signup_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(q): Query<SignupQuery>,
 ) -> AppResult<impl IntoResponse> {
     if current_user(&state.auth, &headers).await?.is_some() {
         return Ok(redirect("/").into_response());
     }
+    let signups_enabled = queries::signups_enabled(&state.pool).await;
+    let signup_disabled_message = queries::signup_disabled_message(&state.pool).await;
+    let mut invite = q.invite.unwrap_or_default().trim().to_string();
+    let mut error = None;
+    if !signups_enabled && !invite.is_empty() {
+        if queries::get_valid_invite(&state.pool, &invite)
+            .await?
+            .is_none()
+        {
+            error = Some("invalid or already used invite code".into());
+            invite.clear();
+        }
+    }
     Ok(SignupTemplate {
         viewer: None,
-        error: None,
+        error,
+        signups_enabled,
+        signup_disabled_message,
+        invite,
     }
     .into_response())
 }
@@ -1004,12 +1064,34 @@ pub struct SignupForm {
     pub email: String,
     pub password: String,
     pub display_name: Option<String>,
+    pub invite: Option<String>,
 }
 
 pub async fn auth_signup_submit(
     State(state): State<AppState>,
     Form(form): Form<SignupForm>,
 ) -> AppResult<Response> {
+    let signups_enabled = queries::signups_enabled(&state.pool).await;
+    let signup_disabled_message = queries::signup_disabled_message(&state.pool).await;
+    let invite_code = form.invite.clone().unwrap_or_default();
+    let invite_row = if !signups_enabled {
+        match queries::get_valid_invite(&state.pool, &invite_code).await? {
+            Some(inv) => Some(inv),
+            None => {
+                return Ok(SignupTemplate {
+                    viewer: None,
+                    error: Some("a valid invite code is required".into()),
+                    signups_enabled: false,
+                    signup_disabled_message,
+                    invite: invite_code,
+                }
+                .into_response());
+            }
+        }
+    } else {
+        None
+    };
+
     match auth::signup_with_password(
         &state.auth,
         &form.username,
@@ -1019,22 +1101,41 @@ pub async fn auth_signup_submit(
     )
     .await
     {
-        Ok(LoginOutcome::Complete { token, .. }) => Ok(redirect_with_cookies(
-            "/",
-            vec![
-                session_cookie_header(&token, 14 * 24 * 3600),
-                clear_mfa_pending_cookie(),
-            ],
-        )),
-        Ok(LoginOutcome::MfaRequired { pending_token }) => Ok(redirect_with_cookie(
-            "/auth/mfa",
-            mfa_pending_cookie_header(&pending_token, 10 * 60),
-        )),
+        Ok(outcome) => {
+            if let Some(inv) = invite_row {
+                if let LoginOutcome::Complete { user, .. } = &outcome {
+                    let _ = queries::consume_invite(&state.pool, inv.id, user.id).await;
+                } else if let Some(u) = queries::get_user_by_username(
+                    &state.pool,
+                    &form.username.trim().to_ascii_lowercase(),
+                )
+                .await?
+                {
+                    let _ = queries::consume_invite(&state.pool, inv.id, u.id).await;
+                }
+            }
+            match outcome {
+                LoginOutcome::Complete { token, .. } => Ok(redirect_with_cookies(
+                    "/",
+                    vec![
+                        session_cookie_header(&token, 14 * 24 * 3600),
+                        clear_mfa_pending_cookie(),
+                    ],
+                )),
+                LoginOutcome::MfaRequired { pending_token } => Ok(redirect_with_cookie(
+                    "/auth/mfa",
+                    mfa_pending_cookie_header(&pending_token, 10 * 60),
+                )),
+            }
+        }
         Err(e) => {
             tracing::warn!("signup failed: {e:#}");
             Ok(SignupTemplate {
                 viewer: None,
                 error: Some(crate::mfa::sanitize_user_error(&e.to_string())),
+                signups_enabled,
+                signup_disabled_message,
+                invite: invite_code,
             }
             .into_response())
         }
@@ -1080,17 +1181,147 @@ async fn require_site_admin(auth: &AuthState, headers: &HeaderMap) -> AppResult<
     Ok(user)
 }
 
+fn format_bytes(n: i64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    let mut v = n.max(0) as f64;
+    let mut i = 0usize;
+    while v >= 1024.0 && i < UNITS.len() - 1 {
+        v /= 1024.0;
+        i += 1;
+    }
+    if i == 0 {
+        format!("{} {}", n, UNITS[i])
+    } else {
+        format!("{v:.1} {}", UNITS[i])
+    }
+}
+
+fn dir_size(path: &std::path::Path) -> u64 {
+    let mut total = 0u64;
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return 0;
+    };
+    for entry in entries.flatten() {
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if meta.is_file() {
+            total += meta.len();
+        } else if meta.is_dir() {
+            total += dir_size(&entry.path());
+        }
+    }
+    total
+}
+
+#[derive(Deserialize)]
+pub struct AdminQuery {
+    pub q: Option<String>,
+    pub page: Option<i64>,
+    pub repo_q: Option<String>,
+    pub repo_page: Option<i64>,
+    pub flash: Option<String>,
+}
+
+const ADMIN_PAGE_SIZE: i64 = 20;
+
 pub async fn admin_panel(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(q): Query<AdminQuery>,
 ) -> AppResult<impl IntoResponse> {
     let viewer = require_site_admin(&state.auth, &headers).await?;
-    let users = queries::list_users(&state.pool).await?;
-    let motd = queries::get_setting(&state.pool, "motd").await.unwrap_or_default();
+    let user_query = q.q.unwrap_or_default();
+    let user_page = q.page.unwrap_or(1).max(1);
+    let repo_query = q.repo_q.unwrap_or_default();
+    let repo_page = q.repo_page.unwrap_or(1).max(1);
+
+    let (users, user_total) = queries::search_users(
+        &state.pool,
+        if user_query.is_empty() {
+            None
+        } else {
+            Some(user_query.as_str())
+        },
+        ADMIN_PAGE_SIZE,
+        (user_page - 1) * ADMIN_PAGE_SIZE,
+    )
+    .await?;
+    let user_pages = ((user_total + ADMIN_PAGE_SIZE - 1) / ADMIN_PAGE_SIZE).max(1);
+
+    let (repo_rows, repo_total) = queries::list_repos_admin(
+        &state.pool,
+        if repo_query.is_empty() {
+            None
+        } else {
+            Some(repo_query.as_str())
+        },
+        ADMIN_PAGE_SIZE,
+        (repo_page - 1) * ADMIN_PAGE_SIZE,
+    )
+    .await?;
+    let repo_pages = ((repo_total + ADMIN_PAGE_SIZE - 1) / ADMIN_PAGE_SIZE).max(1);
+    let repos = repo_rows
+        .into_iter()
+        .map(|(r, owner)| AdminRepoView {
+            id: r.id,
+            owner,
+            name: r.name,
+            visibility: r.visibility,
+            archived: r.archived,
+            updated_at: r.updated_at,
+        })
+        .collect();
+
+    let motd = queries::get_setting(&state.pool, "motd")
+        .await
+        .unwrap_or_default();
+    let announcement = queries::site_announcement(&state.pool).await;
+    let signups_enabled = queries::signups_enabled(&state.pool).await;
+    let signup_disabled_message = queries::signup_disabled_message(&state.pool).await;
+    let invites = queries::list_active_invites(&state.pool, 50)
+        .await?
+        .into_iter()
+        .map(|i| AdminInviteView {
+            id: i.id,
+            code: i.code,
+            created_at: i.created_at,
+        })
+        .collect();
+
+    let mut stats = queries::admin_stats(&state.pool).await?;
+    let repos_dir = state.config.repos_dir();
+    stats.disk_bytes = match tokio::task::spawn_blocking(move || dir_size(&repos_dir)).await {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+
     Ok(AdminTemplate {
         viewer: Some(viewer),
         users,
+        user_query,
+        user_page,
+        user_pages,
+        user_total,
         motd,
+        announcement,
+        signups_enabled,
+        signup_disabled_message,
+        invites,
+        repos,
+        repo_query,
+        repo_page,
+        repo_pages,
+        repo_total,
+        stats: AdminStatsView {
+            user_count: stats.user_count,
+            repo_count: stats.repo_count,
+            public_repo_count: stats.public_repo_count,
+            recent_signups: stats.recent_signups,
+            active_invites: stats.active_invites,
+            disk_label: format_bytes(stats.disk_bytes as i64),
+        },
+        flash: q.flash.filter(|s| !s.is_empty()),
     })
 }
 
@@ -1122,6 +1353,35 @@ pub async fn admin_set_user(
 }
 
 #[derive(Deserialize)]
+pub struct AdminSuspendForm {
+    pub user_id: Uuid,
+    pub is_suspended: Option<String>,
+}
+
+pub async fn admin_set_suspended(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<AdminSuspendForm>,
+) -> AppResult<Response> {
+    let viewer = require_site_admin(&state.auth, &headers).await?;
+    let suspend = checkbox(&form.is_suspended);
+    if form.user_id == viewer.id && suspend {
+        return Err(AppError::bad("cannot suspend yourself"));
+    }
+    let target = queries::get_user_by_id(&state.pool, form.user_id)
+        .await?
+        .ok_or_else(|| AppError::bad("user not found"))?;
+    if target.is_site_admin && suspend {
+        let count = queries::site_admin_count(&state.pool).await?;
+        if count <= 1 {
+            return Err(AppError::bad("cannot suspend the last site admin"));
+        }
+    }
+    queries::set_user_suspended(&state.pool, form.user_id, suspend).await?;
+    Ok(redirect_see_other("/admin"))
+}
+
+#[derive(Deserialize)]
 pub struct AdminMotdForm {
     pub motd: Option<String>,
 }
@@ -1134,6 +1394,135 @@ pub async fn admin_save_motd(
     let _viewer = require_site_admin(&state.auth, &headers).await?;
     queries::set_setting(&state.pool, "motd", form.motd.unwrap_or_default().trim()).await?;
     Ok(redirect_see_other("/admin"))
+}
+
+#[derive(Deserialize)]
+pub struct AdminAnnouncementForm {
+    pub announcement: Option<String>,
+}
+
+pub async fn admin_save_announcement(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<AdminAnnouncementForm>,
+) -> AppResult<Response> {
+    let _viewer = require_site_admin(&state.auth, &headers).await?;
+    queries::set_setting(
+        &state.pool,
+        "announcement",
+        form.announcement.unwrap_or_default().trim(),
+    )
+    .await?;
+    Ok(redirect_see_other("/admin"))
+}
+
+#[derive(Deserialize)]
+pub struct AdminSignupsForm {
+    pub signups_enabled: Option<String>,
+    pub signup_disabled_message: Option<String>,
+}
+
+pub async fn admin_save_signups(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<AdminSignupsForm>,
+) -> AppResult<Response> {
+    let _viewer = require_site_admin(&state.auth, &headers).await?;
+    let enabled = checkbox(&form.signups_enabled);
+    queries::set_setting(
+        &state.pool,
+        "signups_enabled",
+        if enabled { "true" } else { "false" },
+    )
+    .await?;
+    let raw = form.signup_disabled_message.unwrap_or_default();
+    let trimmed = raw.trim();
+    let message = if trimmed.is_empty() {
+        queries::DEFAULT_SIGNUP_DISABLED_MESSAGE
+    } else {
+        trimmed
+    };
+    queries::set_setting(&state.pool, "signup_disabled_message", message).await?;
+    Ok(redirect_see_other("/admin"))
+}
+
+pub async fn admin_create_invite(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<Response> {
+    let viewer = require_site_admin(&state.auth, &headers).await?;
+    let inv = queries::create_invite(&state.pool, viewer.id).await?;
+    let flash_raw = format!("invite created: {}", inv.code);
+    let flash = urlencoding::encode(&flash_raw);
+    Ok(redirect_see_other(&format!("/admin?flash={flash}")))
+}
+
+pub async fn admin_revoke_invite(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> AppResult<Response> {
+    let _viewer = require_site_admin(&state.auth, &headers).await?;
+    queries::revoke_invite(&state.pool, id).await?;
+    Ok(redirect_see_other("/admin"))
+}
+
+#[derive(Deserialize)]
+pub struct AdminVisibilityForm {
+    pub visibility: String,
+}
+
+pub async fn admin_repo_visibility(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Form(form): Form<AdminVisibilityForm>,
+) -> AppResult<Response> {
+    let _viewer = require_site_admin(&state.auth, &headers).await?;
+    let visibility = match form.visibility.as_str() {
+        "public" => "public",
+        _ => "private",
+    };
+    queries::set_repo_visibility(&state.pool, id, visibility).await?;
+    Ok(redirect_see_other("/admin"))
+}
+
+#[derive(Deserialize)]
+pub struct AdminDeleteRepoForm {
+    pub confirm: Option<String>,
+}
+
+pub async fn admin_repo_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Form(form): Form<AdminDeleteRepoForm>,
+) -> AppResult<Response> {
+    let viewer = require_site_admin(&state.auth, &headers).await?;
+    let (repo, owner) = queries::get_repo_by_id(&state.pool, id)
+        .await?
+        .ok_or_else(|| AppError::bad("repository not found"))?;
+    let confirm = form.confirm.unwrap_or_default();
+    if confirm != repo.name && confirm != format!("{owner}/{}", repo.name) {
+        return Err(AppError::bad("type the repository name to confirm delete"));
+    }
+    queries::delete_repo(&state.pool, repo.id).await?;
+    let _ = git::remove_bare(&state.config.repos_dir(), &owner, &repo.name);
+    queries::record_activity(
+        &state.pool,
+        Some(viewer.id),
+        None,
+        "repo.delete",
+        "deleted repository",
+        serde_json::json!({ "owner": owner, "name": repo.name, "admin": true }),
+    )
+    .await?;
+    Ok(redirect_see_other("/admin"))
+}
+
+pub async fn site_banner_json(State(state): State<AppState>) -> impl IntoResponse {
+    let message = queries::site_announcement(&state.pool).await;
+    axum::Json(serde_json::json!({ "message": message }))
 }
 
 // â”€â”€ new repo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1363,6 +1752,7 @@ pub async fn keys_settings(
 pub struct AddKeyForm {
     pub name: String,
     pub public_key: String,
+    pub key_usage: Option<String>,
 }
 
 pub async fn keys_add(
@@ -1373,6 +1763,7 @@ pub async fn keys_add(
     let user = require_login(&state.auth, &headers).await?;
     let name = form.name.trim();
     let public_key = form.public_key.trim();
+    let key_usage = form.key_usage.as_deref().unwrap_or("authentication");
     if name.is_empty() || public_key.is_empty() {
         let keys = queries::list_ssh_keys(&state.pool, user.id).await?;
         let gpg_keys = queries::list_gpg_keys(&state.pool, user.id).await?;
@@ -1385,9 +1776,25 @@ pub async fn keys_add(
         .into_response());
     }
     let fp = fingerprint_ssh_pubkey(public_key).map_err(|e| AppError::bad(e.to_string()))?;
-    queries::add_ssh_key(&state.pool, user.id, name, public_key, &fp)
+    queries::add_ssh_key(&state.pool, user.id, name, public_key, &fp, key_usage)
         .await
         .map_err(|e| AppError::bad(format!("could not add key: {e}")))?;
+    Ok(redirect_see_other("/settings/keys"))
+}
+
+#[derive(Deserialize)]
+pub struct KeyUsageForm {
+    pub key_usage: String,
+}
+
+pub async fn keys_update_usage(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Form(form): Form<KeyUsageForm>,
+) -> AppResult<Response> {
+    let user = require_login(&state.auth, &headers).await?;
+    queries::update_ssh_key_usage(&state.pool, user.id, id, &form.key_usage).await?;
     Ok(redirect_see_other("/settings/keys"))
 }
 
@@ -1546,20 +1953,18 @@ pub async fn repo_home(
         }
     }
 
-    let latest_commit = grepo
-        .as_ref()
-        .and_then(|g| latest_commit_view(g, &current_branch));
+    let latest_commit = match grepo.as_ref() {
+        Some(g) => {
+            let prepared = prepare_latest_commit(g, &current_branch);
+            latest_commit_view(&state, prepared).await
+        }
+        None => None,
+    };
     let languages = language_stat_views(languages);
 
     let forked_from = if let Some(fid) = repository.fork_of_id {
         match queries::get_repo_by_id(&state.pool, fid).await? {
-            Some(parent) => {
-                let parent_owner = queries::get_user_by_id(&state.pool, parent.owner_id)
-                    .await?
-                    .map(|u| u.username)
-                    .unwrap_or_else(|| "unknown".into());
-                Some((parent_owner, parent.name))
-            }
+            Some((parent, parent_owner)) => Some((parent_owner, parent.name)),
             None => None,
         }
     } else {
@@ -1574,6 +1979,7 @@ pub async fn repo_home(
         (false, false)
     };
 
+    let social = og::repo_social_meta(&state.config.public_url, &owner, &repository);
     Ok(RepoHomeTemplate {
         viewer,
         owner: owner_user,
@@ -1592,7 +1998,34 @@ pub async fn repo_home(
         forked_from,
         starred,
         watching,
+        social,
     })
+}
+
+pub async fn repo_og_image(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+) -> AppResult<Response> {
+    let (repository, owner_user, _viewer, _access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let png = og::render_repo_card(&owner_user.username, &repository);
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, "image/png")
+        .header(axum::http::header::CACHE_CONTROL, "public, max-age=3600")
+        .body(Body::from(png))
+        .unwrap())
+}
+
+pub async fn site_og_image() -> Response {
+    let png = og::render_site_card();
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, "image/png")
+        .header(axum::http::header::CACHE_CONTROL, "public, max-age=86400")
+        .body(Body::from(png))
+        .unwrap()
 }
 
 pub async fn repo_tree(
@@ -1628,7 +2061,8 @@ pub async fn repo_tree(
         _ => None,
     };
     let branches = git::list_branches(&grepo).unwrap_or_default();
-    let latest_commit = latest_commit_view(&grepo, &branch);
+    let prepared = prepare_latest_commit(&grepo, &branch);
+    let latest_commit = latest_commit_view(&state, prepared).await;
     let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
     Ok(RepoTreeTemplate {
         viewer,
@@ -1720,11 +2154,15 @@ pub async fn repo_commits(
     let branch = q
         .branch
         .unwrap_or_else(|| repository.default_branch.clone());
-    let commits = git::list_commits(&grepo, &branch, 100)
-        .unwrap_or_default()
+    let raw_commits = git::list_commits(&grepo, &branch, 100).unwrap_or_default();
+    let prepared: Vec<_> = raw_commits
         .into_iter()
-        .map(commit_view)
+        .map(|c| {
+            let extracted = git::extract_commit_signature(&grepo, &c.id);
+            (c, extracted)
+        })
         .collect();
+    let commits = commit_views(&state, prepared).await;
     let branches = git::list_branches(&grepo).unwrap_or_default();
     let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
     Ok(RepoCommitsTemplate {
@@ -1750,6 +2188,7 @@ pub async fn repo_commit(
     let grepo = git::open_bare(&state.config.repos_dir(), &owner, &repo)
         .map_err(|_| AppError::not_found())?;
     let commit = git::get_commit(&grepo, &id).map_err(|_| AppError::not_found())?;
+    let extracted = git::extract_commit_signature(&grepo, &commit.id);
     let diff = git::commit_diff(&grepo, &id).unwrap_or_default();
     let diff_html = render_diff_html(&diff);
     let message_html = linkify_commit_message(
@@ -1765,7 +2204,7 @@ pub async fn repo_commit(
         owner: owner_user,
         repo: repository,
         access,
-        commit: commit_view(commit),
+        commit: commit_view(&state, commit, extracted).await,
         message_html,
         diff_html,
         clone_http: clone_urls(&state, &owner, &repo).0,
@@ -1783,6 +2222,7 @@ pub async fn repo_diff(
     let grepo = git::open_bare(&state.config.repos_dir(), &owner, &repo)
         .map_err(|_| AppError::not_found())?;
     let commit = git::get_commit(&grepo, &id).map_err(|_| AppError::not_found())?;
+    let extracted = git::extract_commit_signature(&grepo, &commit.id);
     let diff = git::commit_diff(&grepo, &id).unwrap_or_default();
     let diff_html = render_diff_html(&diff);
     let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
@@ -1791,7 +2231,7 @@ pub async fn repo_diff(
         owner: owner_user,
         repo: repository,
         access,
-        commit: commit_view(commit),
+        commit: commit_view(&state, commit, extracted).await,
         diff_html,
         clone_http,
         clone_ssh,
@@ -2046,7 +2486,38 @@ pub async fn repo_branches(
     })
 }
 
-fn commit_view(c: git::CommitInfo) -> CommitView {
+async fn commit_view(
+    state: &AppState,
+    c: git::CommitInfo,
+    extracted: Option<(String, Vec<u8>)>,
+) -> CommitView {
+    let verification = match extracted {
+        Some((sig, payload)) => {
+            git::verify_commit_signature(
+                &state.pool,
+                &sig,
+                &payload,
+                &c.email,
+                c.time,
+            )
+            .await
+        }
+        None => None,
+    };
+    let (verified, verify_kind, verify_fingerprint, verify_fingerprint_label, verified_at) =
+        match verification {
+            Some(v) => {
+                let label = v.fingerprint_label().to_string();
+                (
+                    true,
+                    v.kind.clone(),
+                    v.fingerprint,
+                    label,
+                    v.verified_at,
+                )
+            }
+            None => (false, String::new(), String::new(), String::new(), String::new()),
+        };
     CommitView {
         id: c.id,
         short_id: c.short_id,
@@ -2054,7 +2525,23 @@ fn commit_view(c: git::CommitInfo) -> CommitView {
         author: c.author,
         email: c.email,
         time: c.time,
+        verified,
+        verify_kind,
+        verify_fingerprint,
+        verify_fingerprint_label,
+        verified_at,
     }
+}
+
+async fn commit_views(
+    state: &AppState,
+    commits: Vec<(git::CommitInfo, Option<(String, Vec<u8>)>)>,
+) -> Vec<CommitView> {
+    let mut out = Vec::with_capacity(commits.len());
+    for (c, extracted) in commits {
+        out.push(commit_view(state, c, extracted).await);
+    }
+    out
 }
 
 // â”€â”€ issues â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -2462,11 +2949,15 @@ pub async fn pull_view(
     let mut commits = Vec::new();
     let mut diff_files = Vec::new();
     if let Ok(g) = git::open_bare(&state.config.repos_dir(), &owner, &repo) {
-        commits = git::commits_between(&g, &pull.source_branch, &pull.target_branch, 100)
+        let prepared: Vec<_> = git::commits_between(&g, &pull.source_branch, &pull.target_branch, 100)
             .unwrap_or_default()
             .into_iter()
-            .map(commit_view)
+            .map(|c| {
+                let extracted = git::extract_commit_signature(&g, &c.id);
+                (c, extracted)
+            })
             .collect();
+        commits = commit_views(&state, prepared).await;
         let diff =
             git::branch_diff(&g, &pull.source_branch, &pull.target_branch).unwrap_or_default();
         diff_files = parse_diff_files(&diff);
@@ -2639,20 +3130,6 @@ pub async fn pull_close(
 
 // â”€â”€ releases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-fn format_bytes(n: i64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
-    let mut v = n.max(0) as f64;
-    let mut i = 0usize;
-    while v >= 1024.0 && i < UNITS.len() - 1 {
-        v /= 1024.0;
-        i += 1;
-    }
-    if i == 0 {
-        format!("{} {}", n, UNITS[i])
-    } else {
-        format!("{v:.1} {}", UNITS[i])
-    }
-}
 
 fn asset_views(assets: Vec<crate::db::models::ReleaseAsset>) -> Vec<ReleaseAssetView> {
     assets

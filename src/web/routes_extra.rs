@@ -784,10 +784,8 @@ pub async fn gpg_add(
     if !key.contains("BEGIN PGP PUBLIC KEY") {
         return Err(AppError::bad("expected a PGP public key block"));
     }
-    let mut hasher = sha2::Sha256::new();
-    use sha2::Digest;
-    hasher.update(key.as_bytes());
-    let fp = hex::encode(hasher.finalize());
+    let fp = crate::git::verify::gpg_fingerprint_from_armor(key)
+        .unwrap_or_else(|_| crate::git::verify::gpg_fingerprint_fallback(key));
     queries::add_gpg_key(&state.pool, user.id, form.name.trim(), key, &fp).await?;
     Ok(redirect_see_other("/settings/keys"))
 }

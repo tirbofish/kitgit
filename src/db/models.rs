@@ -14,6 +14,7 @@ pub struct User {
     pub avatar_path: Option<String>,
     pub avatar_url: Option<String>,
     pub is_site_admin: bool,
+    pub is_suspended: bool,
     pub show_email: bool,
     pub vigilant_mode: bool,
     pub created_at: DateTime<Utc>,
@@ -115,7 +116,27 @@ pub struct SshKey {
     pub name: String,
     pub public_key: String,
     pub fingerprint: String,
+    /// `authentication`, `signing`, or `both`.
+    pub key_usage: String,
     pub created_at: DateTime<Utc>,
+}
+
+impl SshKey {
+    pub fn allows_authentication(&self) -> bool {
+        self.key_usage == "authentication" || self.key_usage == "both"
+    }
+
+    pub fn allows_signing(&self) -> bool {
+        self.key_usage == "signing" || self.key_usage == "both"
+    }
+
+    pub fn usage_label(&self) -> &'static str {
+        match self.key_usage.as_str() {
+            "signing" => "Signing",
+            "both" => "Authentication & Signing",
+            _ => "Authentication",
+        }
+    }
 }
 
 #[derive(Debug, Clone, FromRow)]

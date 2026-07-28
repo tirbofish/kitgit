@@ -147,8 +147,17 @@ pub fn sanitize_user_error(msg: &str) -> String {
     if lower.contains("email") && lower.contains("required") {
         return msg.to_string();
     }
+    if lower.contains("account suspended") || lower.contains("suspended") {
+        return "this account has been suspended".into();
+    }
+    if lower.contains("invite") {
+        return msg.to_string();
+    }
     if lower.contains("signup unavailable") || lower.contains("api token") {
         return "signup is temporarily unavailable".into();
+    }
+    if lower.contains("signups disabled") || lower.contains("disabled new signups") {
+        return msg.to_string();
     }
     if lower.contains("authentik") || lower.contains("oidc") {
         return "authentication failed".into();

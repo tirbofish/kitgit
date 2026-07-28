@@ -5,7 +5,32 @@
   <span class="kg-kicker">admin</span>
   <h1 class="kg-display">site settings</h1>
 
-  <form class="kg-form" method="post" action="/admin/motd" style="margin:1.5rem 0 2.5rem;max-width:36rem">
+  {% if let Some(msg) = flash %}
+    <div class="kg-flash">{{ msg }}</div>
+  {% endif %}
+
+  <div class="kg-admin-stats">
+    <div><strong>{{ stats.user_count }}</strong><span>users</span></div>
+    <div><strong>{{ stats.repo_count }}</strong><span>repos</span></div>
+    <div><strong>{{ stats.public_repo_count }}</strong><span>public</span></div>
+    <div><strong>{{ stats.recent_signups }}</strong><span>signups (7d)</span></div>
+    <div><strong>{{ stats.active_invites }}</strong><span>invites</span></div>
+    <div><strong>{{ stats.disk_label }}</strong><span>disk</span></div>
+  </div>
+
+  <form class="kg-form" method="post" action="/admin/announcement" style="margin:2rem 0;max-width:36rem">
+    <h2 class="kg-title" style="margin:0">announcement</h2>
+    <p class="kg-muted">Sticky site-wide banner (maintenance, incidents). Leave empty to hide.</p>
+    <label>
+      banner message
+      <textarea name="announcement" rows="2" placeholder="Shown at the top of every page">{{ announcement }}</textarea>
+    </label>
+    <div class="kg-actions">
+      <button class="kg-btn" type="submit">save announcement</button>
+    </div>
+  </form>
+
+  <form class="kg-form" method="post" action="/admin/motd" style="margin:0 0 2.5rem;max-width:36rem">
     <label>
       message of the day
       <textarea name="motd" rows="3" placeholder="Shown on the frontpage">{{ motd }}</textarea>
@@ -15,30 +40,163 @@
     </div>
   </form>
 
-  <h2 class="kg-title">site admins</h2>
-  <p class="kg-muted">Pick who can open this panel. The first successful login becomes admin automatically if none exist.</p>
+  <form class="kg-form" method="post" action="/admin/signups" style="margin:0 0 1.5rem;max-width:36rem">
+    <h2 class="kg-title" style="margin:0">signups</h2>
+    <p class="kg-muted">When disabled, new accounts need a single-use invite code.</p>
+    <label class="kg-check">
+      <input type="checkbox" name="signups_enabled" value="on"{% if signups_enabled %} checked{% endif %} />
+      allow open signups
+    </label>
+    <label>
+      disabled banner message
+      <textarea name="signup_disabled_message" rows="3" placeholder="Shown on the signup page when signups are off">{{ signup_disabled_message }}</textarea>
+    </label>
+    <div class="kg-actions">
+      <button class="kg-btn" type="submit">save signup settings</button>
+    </div>
+  </form>
 
-  <ul class="kg-list" style="margin-top:1.5rem">
+  <div style="margin:0 0 2.5rem;max-width:40rem">
+    <h2 class="kg-title">invites</h2>
+    <p class="kg-muted">Create single-use codes for invite-only signups.</p>
+    <form method="post" action="/admin/invites" style="margin:0.75rem 0 1rem">
+      <button class="kg-btn" type="submit">create invite</button>
+    </form>
+    <ul class="kg-list">
+      {% for inv in invites %}
+      <li>
+        <div>
+          <code>{{ inv.code }}</code>
+          <span class="kg-meta"> · {{ inv.created_at }}</span>
+        </div>
+        <form method="post" action="/admin/invites/{{ inv.id }}/revoke" style="display:inline">
+          <button class="kg-btn kg-btn--ghost" type="submit">revoke</button>
+        </form>
+      </li>
+      {% else %}
+      <li><span class="kg-muted">no active invites</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <h2 class="kg-title">users</h2>
+  <p class="kg-muted">Search, suspend accounts, and manage site admins.</p>
+  <form method="get" action="/admin" class="kg-form" style="margin:1rem 0;max-width:28rem;flex-direction:row;align-items:end;gap:0.75rem">
+    <label style="flex:1">
+      search
+      <input type="search" name="q" value="{{ user_query }}" placeholder="username, email, name" />
+    </label>
+    {% if !repo_query.is_empty() %}<input type="hidden" name="repo_q" value="{{ repo_query }}" />{% endif %}
+    {% if repo_page > 1 %}<input type="hidden" name="repo_page" value="{{ repo_page }}" />{% endif %}
+    <button class="kg-btn" type="submit">search</button>
+  </form>
+  <p class="kg-meta">{{ user_total }} user{% if user_total != 1 %}s{% endif %}</p>
+
+  <ul class="kg-list" style="margin-top:1rem">
     {% for u in users %}
     <li>
       <div>
         <a href="/{{ u.username }}">{{ u.username }}</a>
-        <span class="kg-meta">{{ u.email }}{% if u.is_site_admin %} · admin{% endif %}</span>
+        <span class="kg-meta">
+          {{ u.email }}
+          {% if u.is_site_admin %} · admin{% endif %}
+          {% if u.is_suspended %} · suspended{% endif %}
+        </span>
       </div>
-      <form method="post" action="/admin/users" style="display:inline">
-        <input type="hidden" name="user_id" value="{{ u.id }}" />
-        {% if u.is_site_admin %}
-          <input type="hidden" name="is_site_admin" value="false" />
-          <button class="kg-btn kg-btn--ghost" type="submit">revoke admin</button>
-        {% else %}
-          <input type="hidden" name="is_site_admin" value="true" />
-          <button class="kg-btn" type="submit">make admin</button>
-        {% endif %}
-      </form>
+      <div class="kg-admin-actions">
+        <form method="post" action="/admin/users/suspend" style="display:inline">
+          <input type="hidden" name="user_id" value="{{ u.id }}" />
+          {% if u.is_suspended %}
+            <input type="hidden" name="is_suspended" value="false" />
+            <button class="kg-btn kg-btn--ghost" type="submit">unsuspend</button>
+          {% else %}
+            <input type="hidden" name="is_suspended" value="true" />
+            <button class="kg-btn kg-btn--ghost" type="submit">suspend</button>
+          {% endif %}
+        </form>
+        <form method="post" action="/admin/users" style="display:inline">
+          <input type="hidden" name="user_id" value="{{ u.id }}" />
+          {% if u.is_site_admin %}
+            <input type="hidden" name="is_site_admin" value="false" />
+            <button class="kg-btn kg-btn--ghost" type="submit">revoke admin</button>
+          {% else %}
+            <input type="hidden" name="is_site_admin" value="true" />
+            <button class="kg-btn" type="submit">make admin</button>
+          {% endif %}
+        </form>
+      </div>
     </li>
     {% else %}
-    <li><span class="kg-muted">no users yet — create an account or log in first.</span></li>
+    <li><span class="kg-muted">no users match.</span></li>
     {% endfor %}
   </ul>
+  {% if user_pages > 1 %}
+  <p class="kg-meta kg-admin-pager">
+    {% if user_page > 1 %}
+      <a href="/admin?q={{ user_query }}&amp;page={{ user_page - 1 }}&amp;repo_q={{ repo_query }}&amp;repo_page={{ repo_page }}">← prev</a>
+    {% endif %}
+    page {{ user_page }} / {{ user_pages }}
+    {% if user_page < user_pages %}
+      <a href="/admin?q={{ user_query }}&amp;page={{ user_page + 1 }}&amp;repo_q={{ repo_query }}&amp;repo_page={{ repo_page }}">next →</a>
+    {% endif %}
+  </p>
+  {% endif %}
+
+  <h2 class="kg-title" style="margin-top:2.5rem">repositories</h2>
+  <p class="kg-muted">Force private or delete repositories across the instance.</p>
+  <form method="get" action="/admin" class="kg-form" style="margin:1rem 0;max-width:28rem;flex-direction:row;align-items:end;gap:0.75rem">
+    <label style="flex:1">
+      search repos
+      <input type="search" name="repo_q" value="{{ repo_query }}" placeholder="owner, name, description" />
+    </label>
+    {% if !user_query.is_empty() %}<input type="hidden" name="q" value="{{ user_query }}" />{% endif %}
+    {% if user_page > 1 %}<input type="hidden" name="page" value="{{ user_page }}" />{% endif %}
+    <button class="kg-btn" type="submit">search</button>
+  </form>
+  <p class="kg-meta">{{ repo_total }} repositor{% if repo_total != 1 %}ies{% else %}y{% endif %}</p>
+
+  <ul class="kg-list" style="margin-top:1rem">
+    {% for r in repos %}
+    <li>
+      <div>
+        <a href="/{{ r.owner }}/{{ r.name }}">{{ r.owner }}/{{ r.name }}</a>
+        <span class="kg-meta">
+          {{ r.visibility }}{% if r.archived %} · archived{% endif %}
+          · {{ r.updated_at }}
+        </span>
+      </div>
+      <div class="kg-admin-actions">
+        {% if r.visibility == "public" %}
+        <form method="post" action="/admin/repos/{{ r.id }}/visibility" style="display:inline">
+          <input type="hidden" name="visibility" value="private" />
+          <button class="kg-btn kg-btn--ghost" type="submit">force private</button>
+        </form>
+        {% else %}
+        <form method="post" action="/admin/repos/{{ r.id }}/visibility" style="display:inline">
+          <input type="hidden" name="visibility" value="public" />
+          <button class="kg-btn kg-btn--ghost" type="submit">make public</button>
+        </form>
+        {% endif %}
+        <form method="post" action="/admin/repos/{{ r.id }}/delete" style="display:inline" onsubmit="return confirm('Delete {{ r.owner }}/{{ r.name }} permanently?');">
+          <input type="hidden" name="confirm" value="{{ r.name }}" />
+          <button class="kg-btn kg-btn--ghost" type="submit">delete</button>
+        </form>
+      </div>
+    </li>
+    {% else %}
+    <li><span class="kg-muted">no repositories match.</span></li>
+    {% endfor %}
+  </ul>
+  {% if repo_pages > 1 %}
+  <p class="kg-meta kg-admin-pager">
+    {% if repo_page > 1 %}
+      <a href="/admin?q={{ user_query }}&amp;page={{ user_page }}&amp;repo_q={{ repo_query }}&amp;repo_page={{ repo_page - 1 }}">← prev</a>
+    {% endif %}
+    page {{ repo_page }} / {{ repo_pages }}
+    {% if repo_page < repo_pages %}
+      <a href="/admin?q={{ user_query }}&amp;page={{ user_page }}&amp;repo_q={{ repo_query }}&amp;repo_page={{ repo_page + 1 }}">next →</a>
+    {% endif %}
+  </p>
+  {% endif %}
 </section>
 {% endblock %}

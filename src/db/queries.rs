@@ -127,6 +127,450 @@ pub async fn set_setting(pool: &PgPool, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+pub const DEFAULT_SIGNUP_DISABLED_MESSAGE: &str =
+    "Unfortunately, the admin has disabled new signups. Sorry!";
+
+pub async fn signups_enabled(pool: &PgPool) -> bool {
+    let v = get_setting(pool, "signups_enabled")
+        .await
+        .unwrap_or_default();
+    if v.is_empty() {
+        return true;
+    }
+    matches!(v.as_str(), "true" | "1" | "yes" | "on")
+}
+
+pub async fn signup_disabled_message(pool: &PgPool) -> String {
+    let v = get_setting(pool, "signup_disabled_message")
+        .await
+        .unwrap_or_default();
+    let trimmed = v.trim();
+    if trimmed.is_empty() {
+        DEFAULT_SIGNUP_DISABLED_MESSAGE.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+pub async fn site_announcement(pool: &PgPool) -> String {
+    get_setting(pool, "announcement")
+        .await
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+}
+
+pub async fn set_user_suspended(pool: &PgPool, id: Uuid, suspended: bool) -> Result<User> {
+    let user = sqlx::query_as::<_, User>(
+        "UPDATE users SET is_suspended = $2, updated_at = now() WHERE id = $1 RETURNING *",
+    )
+    .bind(id)
+    .bind(suspended)
+    .fetch_one(pool)
+    .await?;
+    if suspended {
+        sqlx::query("DELETE FROM sessions WHERE user_id = $1")
+            .bind(id)
+            .execute(pool)
+            .await?;
+        let _ = delete_mfa_pending_for_user(pool, id).await;
+    }
+    Ok(user)
+}
+
+pub async fn search_users(
+    pool: &PgPool,
+    query: Option<&str>,
+    limit: i64,
+    offset: i64,
+) -> Result<(Vec<User>, i64)> {
+    let q = query.map(|s| s.trim()).filter(|s| !s.is_empty());
+    let (users, total): (Vec<User>, i64) = if let Some(term) = q {
+        let like = format!("%{}%", term.replace('%', "\\%").replace('_', "\\_"));
+        let users = sqlx::query_as::<_, User>(
+            r#"
+            SELECT * FROM users
+            WHERE username ILIKE $1 ESCAPE '\'
+               OR email ILIKE $1 ESCAPE '\'
+               OR display_name ILIKE $1 ESCAPE '\'
+            ORDER BY username
+            LIMIT $2 OFFSET $3
+            "#,
+        )
+        .bind(&like)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await?;
+        let (total,): (i64,) = sqlx::query_as(
+            r#"
+            SELECT COUNT(*) FROM users
+            WHERE username ILIKE $1 ESCAPE '\'
+               OR email ILIKE $1 ESCAPE '\'
+               OR display_name ILIKE $1 ESCAPE '\'
+            "#,
+        )
+        .bind(&like)
+        .fetch_one(pool)
+        .await?;
+        (users, total)
+    } else {
+        let users = sqlx::query_as::<_, User>(
+            "SELECT * FROM users ORDER BY username LIMIT $1 OFFSET $2",
+        )
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await?;
+        let (total,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
+            .fetch_one(pool)
+            .await?;
+        (users, total)
+    };
+    Ok((users, total))
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct InviteCode {
+    pub id: Uuid,
+    pub code: String,
+    pub created_by: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub used_by: Option<Uuid>,
+    pub used_at: Option<DateTime<Utc>>,
+    pub revoked_at: Option<DateTime<Utc>>,
+}
+
+pub fn generate_invite_code() -> String {
+    use rand::RngExt;
+    const ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let mut rng = rand::rng();
+    let mut out = String::with_capacity(10);
+    for _ in 0..10 {
+        let mut b = [0u8; 1];
+        rng.fill(&mut b);
+        out.push(ALPHABET[(b[0] as usize) % ALPHABET.len()] as char);
+    }
+    out
+}
+
+pub async fn create_invite(pool: &PgPool, created_by: Uuid) -> Result<InviteCode> {
+    let code = generate_invite_code();
+    Ok(sqlx::query_as::<_, InviteCode>(
+        r#"
+        INSERT INTO invite_codes (code, created_by)
+        VALUES ($1, $2)
+        RETURNING *
+        "#,
+    )
+    .bind(code)
+    .bind(created_by)
+    .fetch_one(pool)
+    .await?)
+}
+
+pub async fn list_active_invites(pool: &PgPool, limit: i64) -> Result<Vec<InviteCode>> {
+    Ok(sqlx::query_as::<_, InviteCode>(
+        r#"
+        SELECT * FROM invite_codes
+        WHERE used_at IS NULL AND revoked_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT $1
+        "#,
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn revoke_invite(pool: &PgPool, id: Uuid) -> Result<()> {
+    sqlx::query(
+        "UPDATE invite_codes SET revoked_at = now() WHERE id = $1 AND used_at IS NULL AND revoked_at IS NULL",
+    )
+    .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Returns the invite if it is unused and not revoked.
+pub async fn get_valid_invite(pool: &PgPool, code: &str) -> Result<Option<InviteCode>> {
+    let code = code.trim().to_uppercase();
+    if code.is_empty() {
+        return Ok(None);
+    }
+    Ok(sqlx::query_as::<_, InviteCode>(
+        r#"
+        SELECT * FROM invite_codes
+        WHERE upper(code) = $1 AND used_at IS NULL AND revoked_at IS NULL
+        "#,
+    )
+    .bind(code)
+    .fetch_optional(pool)
+    .await?)
+}
+
+pub async fn consume_invite(pool: &PgPool, invite_id: Uuid, user_id: Uuid) -> Result<bool> {
+    let res = sqlx::query(
+        r#"
+        UPDATE invite_codes
+        SET used_by = $2, used_at = now()
+        WHERE id = $1 AND used_at IS NULL AND revoked_at IS NULL
+        "#,
+    )
+    .bind(invite_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(res.rows_affected() > 0)
+}
+
+#[derive(Debug, Clone)]
+pub struct AdminStats {
+    pub user_count: i64,
+    pub repo_count: i64,
+    pub public_repo_count: i64,
+    pub recent_signups: i64,
+    pub active_invites: i64,
+    pub disk_bytes: u64,
+}
+
+pub async fn admin_stats(pool: &PgPool) -> Result<AdminStats> {
+    let (user_count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
+        .fetch_one(pool)
+        .await?;
+    let (repo_count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM repositories")
+        .fetch_one(pool)
+        .await?;
+    let (public_repo_count,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM repositories WHERE visibility = 'public'")
+            .fetch_one(pool)
+            .await?;
+    let (recent_signups,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM users WHERE created_at > now() - interval '7 days'",
+    )
+    .fetch_one(pool)
+    .await?;
+    let (active_invites,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM invite_codes WHERE used_at IS NULL AND revoked_at IS NULL",
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(AdminStats {
+        user_count,
+        repo_count,
+        public_repo_count,
+        recent_signups,
+        active_invites,
+        disk_bytes: 0,
+    })
+}
+
+pub async fn list_repos_admin(
+    pool: &PgPool,
+    query: Option<&str>,
+    limit: i64,
+    offset: i64,
+) -> Result<(Vec<(Repository, String)>, i64)> {
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        id: Uuid,
+        owner_id: Uuid,
+        name: String,
+        description: String,
+        visibility: String,
+        default_branch: String,
+        archived: bool,
+        issues_enabled: bool,
+        pulls_enabled: bool,
+        releases_enabled: bool,
+        allow_merge: bool,
+        allow_squash: bool,
+        allow_rebase: bool,
+        default_merge_style: String,
+        protect_default_branch: bool,
+        protect_block_force_push: bool,
+        fork_of_id: Option<Uuid>,
+        stars_count: i32,
+        watches_count: i32,
+        forks_count: i32,
+        created_at: DateTime<Utc>,
+        updated_at: DateTime<Utc>,
+        owner_username: String,
+    }
+
+    let q = query.map(|s| s.trim()).filter(|s| !s.is_empty());
+    let (rows, total): (Vec<Row>, i64) = if let Some(term) = q {
+        let like = format!("%{}%", term.replace('%', "\\%").replace('_', "\\_"));
+        let rows = sqlx::query_as(
+            r#"
+            SELECT r.*, u.username AS owner_username
+            FROM repositories r
+            JOIN users u ON u.id = r.owner_id
+            WHERE r.name ILIKE $1 ESCAPE '\'
+               OR r.description ILIKE $1 ESCAPE '\'
+               OR u.username ILIKE $1 ESCAPE '\'
+            ORDER BY r.updated_at DESC
+            LIMIT $2 OFFSET $3
+            "#,
+        )
+        .bind(&like)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await?;
+        let (total,): (i64,) = sqlx::query_as(
+            r#"
+            SELECT COUNT(*)
+            FROM repositories r
+            JOIN users u ON u.id = r.owner_id
+            WHERE r.name ILIKE $1 ESCAPE '\'
+               OR r.description ILIKE $1 ESCAPE '\'
+               OR u.username ILIKE $1 ESCAPE '\'
+            "#,
+        )
+        .bind(&like)
+        .fetch_one(pool)
+        .await?;
+        (rows, total)
+    } else {
+        let rows = sqlx::query_as(
+            r#"
+            SELECT r.*, u.username AS owner_username
+            FROM repositories r
+            JOIN users u ON u.id = r.owner_id
+            ORDER BY r.updated_at DESC
+            LIMIT $1 OFFSET $2
+            "#,
+        )
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await?;
+        let (total,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM repositories")
+            .fetch_one(pool)
+            .await?;
+        (rows, total)
+    };
+
+    let repos = rows
+        .into_iter()
+        .map(|r| {
+            (
+                Repository {
+                    id: r.id,
+                    owner_id: r.owner_id,
+                    name: r.name,
+                    description: r.description,
+                    visibility: r.visibility,
+                    default_branch: r.default_branch,
+                    archived: r.archived,
+                    issues_enabled: r.issues_enabled,
+                    pulls_enabled: r.pulls_enabled,
+                    releases_enabled: r.releases_enabled,
+                    allow_merge: r.allow_merge,
+                    allow_squash: r.allow_squash,
+                    allow_rebase: r.allow_rebase,
+                    default_merge_style: r.default_merge_style,
+                    protect_default_branch: r.protect_default_branch,
+                    protect_block_force_push: r.protect_block_force_push,
+                    fork_of_id: r.fork_of_id,
+                    stars_count: r.stars_count,
+                    watches_count: r.watches_count,
+                    forks_count: r.forks_count,
+                    created_at: r.created_at,
+                    updated_at: r.updated_at,
+                },
+                r.owner_username,
+            )
+        })
+        .collect();
+    Ok((repos, total))
+}
+
+pub async fn set_repo_visibility(
+    pool: &PgPool,
+    id: Uuid,
+    visibility: &str,
+) -> Result<Repository> {
+    Ok(sqlx::query_as::<_, Repository>(
+        "UPDATE repositories SET visibility = $2, updated_at = now() WHERE id = $1 RETURNING *",
+    )
+    .bind(id)
+    .bind(visibility)
+    .fetch_one(pool)
+    .await?)
+}
+
+pub async fn get_repo_by_id(pool: &PgPool, id: Uuid) -> Result<Option<(Repository, String)>> {
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        id: Uuid,
+        owner_id: Uuid,
+        name: String,
+        description: String,
+        visibility: String,
+        default_branch: String,
+        archived: bool,
+        issues_enabled: bool,
+        pulls_enabled: bool,
+        releases_enabled: bool,
+        allow_merge: bool,
+        allow_squash: bool,
+        allow_rebase: bool,
+        default_merge_style: String,
+        protect_default_branch: bool,
+        protect_block_force_push: bool,
+        fork_of_id: Option<Uuid>,
+        stars_count: i32,
+        watches_count: i32,
+        forks_count: i32,
+        created_at: DateTime<Utc>,
+        updated_at: DateTime<Utc>,
+        owner_username: String,
+    }
+    let row: Option<Row> = sqlx::query_as(
+        r#"
+        SELECT r.*, u.username AS owner_username
+        FROM repositories r
+        JOIN users u ON u.id = r.owner_id
+        WHERE r.id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| {
+        (
+            Repository {
+                id: r.id,
+                owner_id: r.owner_id,
+                name: r.name,
+                description: r.description,
+                visibility: r.visibility,
+                default_branch: r.default_branch,
+                archived: r.archived,
+                issues_enabled: r.issues_enabled,
+                pulls_enabled: r.pulls_enabled,
+                releases_enabled: r.releases_enabled,
+                allow_merge: r.allow_merge,
+                allow_squash: r.allow_squash,
+                allow_rebase: r.allow_rebase,
+                default_merge_style: r.default_merge_style,
+                protect_default_branch: r.protect_default_branch,
+                protect_block_force_push: r.protect_block_force_push,
+                fork_of_id: r.fork_of_id,
+                stars_count: r.stars_count,
+                watches_count: r.watches_count,
+                forks_count: r.forks_count,
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+            },
+            r.owner_username,
+        )
+    }))
+}
+
 
 pub async fn create_session(pool: &PgPool, user_id: Uuid, token_hash: &str, days: i64) -> Result<()> {
     let expires = Utc::now() + chrono::Duration::days(days);
@@ -146,7 +590,9 @@ pub async fn user_from_session(pool: &PgPool, token_hash: &str) -> Result<Option
         r#"
         SELECT u.* FROM users u
         JOIN sessions s ON s.user_id = u.id
-        WHERE s.token_hash = $1 AND s.expires_at > now()
+        WHERE s.token_hash = $1
+          AND s.expires_at > now()
+          AND u.is_suspended = FALSE
         "#,
     )
     .bind(token_hash)
@@ -236,15 +682,6 @@ pub async fn get_repo(pool: &PgPool, owner: &str, name: &str) -> Result<Option<(
     .fetch_optional(pool)
     .await?;
     Ok(repo.map(|r| (r, owner_user)))
-}
-
-pub async fn get_repo_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Repository>> {
-    Ok(
-        sqlx::query_as::<_, Repository>("SELECT * FROM repositories WHERE id = $1")
-            .bind(id)
-            .fetch_optional(pool)
-            .await?,
-    )
 }
 
 pub async fn list_user_repos(pool: &PgPool, owner_id: Uuid, viewer: Option<Uuid>) -> Result<Vec<Repository>> {
@@ -521,17 +958,27 @@ pub async fn list_collaborators(pool: &PgPool, repo_id: Uuid) -> Result<Vec<(Col
     Ok(out)
 }
 
+pub fn normalize_ssh_key_usage(usage: &str) -> &'static str {
+    match usage.trim().to_ascii_lowercase().as_str() {
+        "signing" => "signing",
+        "both" => "both",
+        _ => "authentication",
+    }
+}
+
 pub async fn add_ssh_key(
     pool: &PgPool,
     user_id: Uuid,
     name: &str,
     public_key: &str,
     fingerprint: &str,
+    key_usage: &str,
 ) -> Result<SshKey> {
+    let key_usage = normalize_ssh_key_usage(key_usage);
     Ok(sqlx::query_as::<_, SshKey>(
         r#"
-        INSERT INTO ssh_keys (user_id, name, public_key, fingerprint)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO ssh_keys (user_id, name, public_key, fingerprint, key_usage)
+        VALUES ($1, $2, $3, $4, $5)
         RETURNING *
         "#,
     )
@@ -539,6 +986,7 @@ pub async fn add_ssh_key(
     .bind(name)
     .bind(public_key)
     .bind(fingerprint)
+    .bind(key_usage)
     .fetch_one(pool)
     .await?)
 }
@@ -561,6 +1009,23 @@ pub async fn delete_ssh_key(pool: &PgPool, user_id: Uuid, id: Uuid) -> Result<()
     Ok(())
 }
 
+pub async fn update_ssh_key_usage(
+    pool: &PgPool,
+    user_id: Uuid,
+    id: Uuid,
+    key_usage: &str,
+) -> Result<()> {
+    let key_usage = normalize_ssh_key_usage(key_usage);
+    sqlx::query("UPDATE ssh_keys SET key_usage = $3 WHERE id = $1 AND user_id = $2")
+        .bind(id)
+        .bind(user_id)
+        .bind(key_usage)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Git-over-SSH authentication: only authentication / both keys.
 pub async fn user_by_ssh_fingerprint(pool: &PgPool, fingerprint: &str) -> Result<Option<User>> {
     // OpenSSH prints SHA256 fingerprints without `=` padding; tolerate either form.
     let normalized = fingerprint.trim_end_matches('=');
@@ -569,11 +1034,55 @@ pub async fn user_by_ssh_fingerprint(pool: &PgPool, fingerprint: &str) -> Result
         SELECT u.* FROM users u
         JOIN ssh_keys k ON k.user_id = u.id
         WHERE rtrim(k.fingerprint, '=') = $1
+          AND k.key_usage IN ('authentication', 'both')
         "#,
     )
     .bind(normalized)
     .fetch_optional(pool)
     .await?)
+}
+
+/// Commit signing: only signing / both keys.
+pub async fn signing_ssh_key_by_fingerprint(
+    pool: &PgPool,
+    fingerprint: &str,
+) -> Result<Option<SshKey>> {
+    let normalized = fingerprint.trim_end_matches('=');
+    Ok(sqlx::query_as::<_, SshKey>(
+        r#"
+        SELECT * FROM ssh_keys
+        WHERE rtrim(fingerprint, '=') = $1
+          AND key_usage IN ('signing', 'both')
+        "#,
+    )
+    .bind(normalized)
+    .fetch_optional(pool)
+    .await?)
+}
+
+pub async fn user_owns_email(pool: &PgPool, user_id: Uuid, email: &str) -> Result<bool> {
+    let email = email.trim().to_ascii_lowercase();
+    let row: Option<(bool,)> = sqlx::query_as(
+        r#"
+        SELECT true FROM users
+        WHERE id = $1 AND lower(email) = $2
+        UNION
+        SELECT true FROM user_emails
+        WHERE user_id = $1 AND lower(email) = $2
+        LIMIT 1
+        "#,
+    )
+    .bind(user_id)
+    .bind(&email)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.is_some())
+}
+
+pub async fn list_all_gpg_keys(pool: &PgPool) -> Result<Vec<GpgKey>> {
+    Ok(sqlx::query_as::<_, GpgKey>("SELECT * FROM gpg_keys ORDER BY created_at DESC")
+        .fetch_all(pool)
+        .await?)
 }
 
 pub async fn record_activity(
@@ -635,14 +1144,10 @@ async fn hydrate_activity(
         let (repo, owner_name) = match e.repo_id {
             Some(id) => {
                 let r = get_repo_by_id(pool, id).await?;
-                let oname = if let Some(ref repo) = r {
-                    get_user_by_id(pool, repo.owner_id)
-                        .await?
-                        .map(|u| u.username)
-                } else {
-                    None
-                };
-                (r, oname)
+                match r {
+                    Some((repo, owner_username)) => (Some(repo), Some(owner_username)),
+                    None => (None, None),
+                }
             }
             None => (None, None),
         };
@@ -1782,6 +2287,7 @@ pub async fn export_user_data(pool: &PgPool, user_id: Uuid) -> Result<serde_json
         "ssh_keys": keys.iter().map(|k| serde_json::json!({
             "name": k.name,
             "fingerprint": k.fingerprint,
+            "key_usage": k.key_usage,
             "created_at": k.created_at,
         })).collect::<Vec<_>>(),
         "repositories": repos.iter().map(|r| serde_json::json!({
