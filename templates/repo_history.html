@@ -1,0 +1,67 @@
+{% extends "layout.html" %}
+
+{% block title %}history · {{ path }} · {{ owner.username }}/{{ repo.name }} — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title">
+    <a href="/{{ owner.username }}/{{ repo.name }}">{{ owner.username }}/{{ repo.name }}</a>
+    · history
+  </h1>
+  {% let tab = "code" %}
+  {% let archive_ref = branch %}
+  {% include "partials/repo_tabs.html" %}
+
+  <p class="kg-meta kg-breadcrumbs">
+    <a href="/{{ owner.username }}/{{ repo.name }}/tree/{{ branch }}">{{ branch }}</a>
+    {% for (name, full) in breadcrumbs %}
+      /
+      {% if loop.last %}
+        {{ name }}
+      {% else %}
+        <a href="/{{ owner.username }}/{{ repo.name }}/tree/{{ branch }}/{{ full }}">{{ name }}</a>
+      {% endif %}
+    {% endfor %}
+  </p>
+
+  <div class="kg-blobbar">
+    <span class="kg-meta">{{ path }}</span>
+    <div class="kg-blobbar__actions">
+      <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/blob/{{ branch }}/{{ path }}">View file</a>
+      <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/blame/{{ branch }}/{{ path }}">Blame</a>
+    </div>
+  </div>
+
+  {% if commits.is_empty() %}
+    <p class="kg-muted">No commits touch this path.</p>
+  {% else %}
+    <ul class="kg-list">
+      {% for c in commits %}
+      <li>
+        <span>
+          <a href="/{{ owner.username }}/{{ repo.name }}/commit/{{ c.id }}" title="View commit">
+            <span class="kg-icon" style="--icon:url('/static/icons/git-commit.svg')"></span>
+            <code>{{ c.short_id }}</code>
+          </a>
+          <a href="/{{ owner.username }}/{{ repo.name }}/commit/{{ c.id }}">{{ c.message }}</a>
+          {% if c.verified %}
+          <details class="kg-verify">
+            <summary class="kg-badge kg-badge--verified">Verified</summary>
+            <div class="kg-verify__panel" role="dialog" aria-label="Commit signature">
+              <p class="kg-verify__fp">
+                <strong>{{ c.verify_fingerprint_label }}:</strong>
+                <code>{{ c.verify_fingerprint }}</code>
+              </p>
+              <p class="kg-meta">Verified on {{ c.verified_at }}</p>
+            </div>
+          </details>
+          {% endif %}
+          <span class="kg-muted"> — {{ c.author }}</span>
+        </span>
+        <span class="kg-meta">{{ c.time }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+{% endblock %}

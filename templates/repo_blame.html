@@ -1,0 +1,66 @@
+{% extends "layout.html" %}
+
+{% block title %}blame · {{ path }} · {{ owner.username }}/{{ repo.name }} — kitgit{% endblock %}
+
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title">
+    <a href="/{{ owner.username }}/{{ repo.name }}">{{ owner.username }}/{{ repo.name }}</a>
+    · blame
+  </h1>
+  {% let tab = "code" %}
+  {% let archive_ref = branch %}
+  {% include "partials/repo_tabs.html" %}
+
+  <p class="kg-meta kg-breadcrumbs">
+    <a href="/{{ owner.username }}/{{ repo.name }}/tree/{{ branch }}">{{ branch }}</a>
+    {% for (name, full) in breadcrumbs %}
+      /
+      {% if loop.last %}
+        {{ name }}
+      {% else %}
+        <a href="/{{ owner.username }}/{{ repo.name }}/tree/{{ branch }}/{{ full }}">{{ name }}</a>
+      {% endif %}
+    {% endfor %}
+  </p>
+
+  <div class="kg-blobbar">
+    <span class="kg-meta">{{ path }}</span>
+    <div class="kg-blobbar__actions">
+      <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/blob/{{ branch }}/{{ path }}">View file</a>
+      <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/history/{{ branch }}/{{ path }}">History</a>
+      <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/raw/{{ branch }}/{{ path }}">
+        <span class="kg-icon" style="--icon:url('/static/icons/download.svg')"></span>
+        Download raw
+      </a>
+    </div>
+  </div>
+
+  {% if binary %}
+    <p class="kg-muted">Binary file — blame is not available.</p>
+  {% else if lines.is_empty() %}
+    <p class="kg-muted">Empty file.</p>
+  {% else %}
+    <div class="kg-blame" role="table" aria-label="Blame for {{ path }}">
+      <div class="kg-blame__head" role="row">
+        <span class="kg-blame__meta" role="columnheader">Commit</span>
+        <span class="kg-blame__num" role="columnheader">#</span>
+        <span class="kg-blame__code" role="columnheader">Line</span>
+      </div>
+      {% for line in lines %}
+      <div class="kg-blame__row{% if line.hunk_start %} kg-blame__row--hunk{% endif %}" role="row">
+        <div class="kg-blame__meta" role="cell">
+          {% if line.hunk_start && !line.commit_id.is_empty() %}
+            <a class="kg-blame__sha" href="/{{ owner.username }}/{{ repo.name }}/commit/{{ line.commit_id }}" title="{{ line.summary }}">{{ line.short_id }}</a>
+            <span class="kg-blame__author" title="{{ line.summary }}">{{ line.author }}</span>
+            <span class="kg-blame__date">{{ line.time_display }}</span>
+          {% endif %}
+        </div>
+        <span class="kg-blame__num" role="cell">{{ line.line_no }}</span>
+        <pre class="kg-blame__code" role="cell">{{ line.content }}</pre>
+      </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</section>
+{% endblock %}
