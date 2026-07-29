@@ -58,7 +58,7 @@
           {% endif %}
           <span class="kg-muted"> — {{ c.author }}</span>
         </span>
-        <span class="kg-meta">{{ c.time }}</span>
+        <span class="kg-meta">{{ c.time_display() }}</span>
       </li>
       {% endfor %}
     </ul>

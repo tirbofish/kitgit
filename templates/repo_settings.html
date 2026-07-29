@@ -385,8 +385,8 @@
 
       <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/settings/danger/delete">
         <div class="kg-danger-row">
-          <label>
-            type <code>{{ repo.name }}</code> to delete
+          <label class="kg-danger-confirm">
+            <span>type <code>{{ repo.name }}</code> to delete</span>
             <input type="text" name="confirm" required autocomplete="off" />
           </label>
           <button class="kg-btn kg-btn--danger" type="submit">delete repository</button>

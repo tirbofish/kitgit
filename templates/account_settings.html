@@ -97,11 +97,16 @@
           {% if e.is_primary %}<span class="kg-badge">primary</span>{% endif %}
           {% if e.verified %}<span class="kg-badge">verified</span>{% endif %}
         </span>
-        {% if !e.is_primary %}
-        <form method="post" action="/settings/account/emails/{{ e.id }}/delete">
-          <button class="kg-btn kg-btn--danger-ghost" type="submit">remove</button>
-        </form>
-        {% endif %}
+        <span class="kg-actions">
+          {% if !e.is_primary %}
+          <form method="post" action="/settings/account/emails/{{ e.id }}/primary">
+            <button class="kg-btn kg-btn--ghost" type="submit">make primary</button>
+          </form>
+          <form method="post" action="/settings/account/emails/{{ e.id }}/delete">
+            <button class="kg-btn kg-btn--danger-ghost" type="submit">remove</button>
+          </form>
+          {% endif %}
+        </span>
       </li>
       {% endfor %}
     </ul>
@@ -191,8 +196,8 @@
     <span class="kg-kicker">delete account</span>
     <form class="kg-form" method="post" action="/settings/account/delete">
       <div class="kg-danger-row">
-        <label>
-          type <code>{{ user.username }}</code> to delete
+        <label class="kg-danger-confirm">
+          <span>type <code>{{ user.username }}</code> to delete</span>
           <input type="text" name="confirm" required autocomplete="off" />
         </label>
         <button class="kg-btn kg-btn--danger" type="submit">delete account</button>

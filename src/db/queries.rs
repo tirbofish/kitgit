@@ -1326,6 +1326,29 @@ pub async fn user_owns_email(pool: &PgPool, user_id: Uuid, email: &str) -> Resul
     Ok(row.is_some())
 }
 
+/// Resolve a kitgit username from a commit author email (primary or secondary).
+pub async fn username_by_email(pool: &PgPool, email: &str) -> Result<Option<String>> {
+    let email = email.trim().to_ascii_lowercase();
+    if email.is_empty() {
+        return Ok(None);
+    }
+    let row: Option<(String,)> = sqlx::query_as(
+        r#"
+        SELECT u.username FROM users u
+        WHERE lower(u.email) = $1
+        UNION
+        SELECT u.username FROM users u
+        JOIN user_emails e ON e.user_id = u.id
+        WHERE lower(e.email) = $1
+        LIMIT 1
+        "#,
+    )
+    .bind(&email)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(u,)| u))
+}
+
 pub async fn list_all_gpg_keys(pool: &PgPool) -> Result<Vec<GpgKey>> {
     Ok(sqlx::query_as::<_, GpgKey>("SELECT * FROM gpg_keys ORDER BY created_at DESC")
         .fetch_all(pool)
@@ -1739,6 +1762,36 @@ pub async fn list_pull_comments(pool: &PgPool, pull_id: Uuid) -> Result<Vec<Comm
     .await?)
 }
 
+pub async fn create_review(
+    pool: &PgPool,
+    pull_id: Uuid,
+    reviewer_id: Uuid,
+    state: &str,
+    body: &str,
+) -> Result<PullReview> {
+    Ok(sqlx::query_as::<_, PullReview>(
+        r#"
+        INSERT INTO pull_reviews (pull_id, reviewer_id, state, body)
+        VALUES ($1, $2, $3, $4) RETURNING *
+        "#,
+    )
+    .bind(pull_id)
+    .bind(reviewer_id)
+    .bind(state)
+    .bind(body)
+    .fetch_one(pool)
+    .await?)
+}
+
+pub async fn list_reviews_for_pull(pool: &PgPool, pull_id: Uuid) -> Result<Vec<PullReview>> {
+    Ok(sqlx::query_as::<_, PullReview>(
+        "SELECT * FROM pull_reviews WHERE pull_id = $1 ORDER BY created_at",
+    )
+    .bind(pull_id)
+    .fetch_all(pool)
+    .await?)
+}
+
 pub async fn create_release(
     pool: &PgPool,
     repo_id: Uuid,
@@ -1918,7 +1971,7 @@ pub async fn rewrite_asset_paths_for_tag(
 }
 
 
-// ΓöÇΓöÇ stars / watches / forks ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// ── stars / watches / forks ──────────────────────────────────────────────────
 
 pub async fn toggle_star(pool: &PgPool, repo_id: Uuid, user_id: Uuid) -> Result<bool> {
     let existing: Option<(Uuid,)> = sqlx::query_as(
@@ -2164,7 +2217,7 @@ pub async fn get_fork_of_user(pool: &PgPool, fork_of_id: Uuid, owner_id: Uuid) -
     .await?)
 }
 
-// ΓöÇΓöÇ reactions ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// ── reactions ────────────────────────────────────────────────────────────────
 
 pub async fn toggle_reaction(
     pool: &PgPool,
@@ -2231,7 +2284,7 @@ pub async fn list_reaction_counts(
     Ok(rows.into_iter().map(|r| (r.emoji, r.count, r.mine)).collect())
 }
 
-// ΓöÇΓöÇ branch rules ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// ── branch rules ─────────────────────────────────────────────────────────────
 
 pub async fn list_branch_rules(pool: &PgPool, repo_id: Uuid) -> Result<Vec<BranchRule>> {
     Ok(sqlx::query_as::<_, BranchRule>(
@@ -2275,7 +2328,7 @@ pub async fn delete_branch_rule(pool: &PgPool, id: Uuid, repo_id: Uuid) -> Resul
     Ok(())
 }
 
-// ΓöÇΓöÇ user emails / privacy / sessions / gpg ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// ── user emails / privacy / sessions / gpg ───────────────────────────────────
 
 pub async fn update_username(pool: &PgPool, id: Uuid, username: &str) -> Result<User> {
     Ok(sqlx::query_as::<_, User>(
@@ -2348,6 +2401,36 @@ pub async fn delete_user_email(pool: &PgPool, id: Uuid, user_id: Uuid) -> Result
         .bind(user_id)
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+pub async fn set_primary_email(pool: &PgPool, user_id: Uuid, email_id: Uuid) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT email FROM user_emails WHERE id = $1 AND user_id = $2",
+    )
+    .bind(email_id)
+    .bind(user_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some((email,)) = row else {
+        anyhow::bail!("email not found");
+    };
+    sqlx::query("UPDATE user_emails SET is_primary = false WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("UPDATE user_emails SET is_primary = true WHERE id = $1 AND user_id = $2")
+        .bind(email_id)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("UPDATE users SET email = $2, updated_at = now() WHERE id = $1")
+        .bind(user_id)
+        .bind(&email)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
     Ok(())
 }
 
@@ -2667,7 +2750,7 @@ pub async fn lfs_object_size(pool: &PgPool, oid: &str) -> Result<Option<i64>> {
     Ok(row.map(|r| r.0))
 }
 
-// â”€â”€ repo mirrors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── repo mirrors ─────────────────────────────────────────────────────────────
 
 pub async fn get_repo_mirror(pool: &PgPool, repo_id: Uuid) -> Result<Option<RepoMirror>> {
     Ok(sqlx::query_as::<_, RepoMirror>(
@@ -2746,7 +2829,7 @@ pub async fn delete_repo_mirror(pool: &PgPool, repo_id: Uuid) -> Result<()> {
     Ok(())
 }
 
-// â”€â”€ per-user audit log â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── per-user audit log ───────────────────────────────────────────────────────
 
 pub async fn record_audit_log(
     pool: &PgPool,
@@ -2788,7 +2871,7 @@ pub async fn list_audit_log_for_user(
     .await?)
 }
 
-// â”€â”€ webhooks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── webhooks ─────────────────────────────────────────────────────────────────
 
 pub async fn list_webhooks(pool: &PgPool, repo_id: Uuid) -> Result<Vec<Webhook>> {
     Ok(sqlx::query_as::<_, Webhook>(
@@ -2956,7 +3039,7 @@ pub async fn list_recent_webhook_deliveries(
         .collect())
 }
 
-// â”€â”€ notifications â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── notifications ────────────────────────────────────────────────────────────
 
 pub async fn create_notification(
     pool: &PgPool,

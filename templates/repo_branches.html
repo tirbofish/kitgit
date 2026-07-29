@@ -61,13 +61,15 @@
           <td>
             {% if access.can_write() && !b.is_default %}
             <div class="kg-branch-actions">
-              <form method="post" action="/{{ owner.username }}/{{ repo.name }}/branches/{{ b.name }}/rename" style="display:inline-flex;gap:0.35rem">
+              <form method="post" action="/{{ owner.username }}/{{ repo.name }}/branches/rename" style="display:inline-flex;gap:0.35rem">
+                <input type="hidden" name="branch" value="{{ b.name }}" />
                 <input type="text" name="new_name" placeholder="rename" required style="width:7rem;font:inherit;border:1px solid var(--kg-line);padding:0.25em 0.4em" />
                 <button class="kg-btn kg-btn--ghost" type="submit" title="Rename">
                   <span class="kg-icon" style="--icon:url('/static/icons/pencil.svg')"></span>
                 </button>
               </form>
-              <form method="post" action="/{{ owner.username }}/{{ repo.name }}/branches/{{ b.name }}/delete" style="display:inline" onsubmit="return confirm('Delete branch {{ b.name }}?')">
+              <form method="post" action="/{{ owner.username }}/{{ repo.name }}/branches/delete" style="display:inline" onsubmit="return confirm('Delete branch {{ b.name }}?')">
+                <input type="hidden" name="branch" value="{{ b.name }}" />
                 <button class="kg-btn kg-btn--danger-ghost" type="submit" title="Delete">
                   <span class="kg-icon" style="--icon:url('/static/icons/trash.svg')"></span>
                 </button>
@@ -139,13 +141,15 @@
           <td>
             {% if access.can_write() %}
             <div class="kg-branch-actions">
-              <form method="post" action="/{{ owner.username }}/{{ repo.name }}/tags/{{ t.name }}/rename" style="display:inline-flex;gap:0.35rem">
+              <form method="post" action="/{{ owner.username }}/{{ repo.name }}/tags/rename" style="display:inline-flex;gap:0.35rem">
+                <input type="hidden" name="tag" value="{{ t.name }}" />
                 <input type="text" name="new_name" placeholder="rename" required style="width:7rem;font:inherit;border:1px solid var(--kg-line);padding:0.25em 0.4em" />
                 <button class="kg-btn kg-btn--ghost" type="submit" title="Rename">
                   <span class="kg-icon" style="--icon:url('/static/icons/pencil.svg')"></span>
                 </button>
               </form>
-              <form method="post" action="/{{ owner.username }}/{{ repo.name }}/tags/{{ t.name }}/delete" style="display:inline" onsubmit="return confirm('Delete tag {{ t.name }}?')">
+              <form method="post" action="/{{ owner.username }}/{{ repo.name }}/tags/delete" style="display:inline" onsubmit="return confirm('Delete tag {{ t.name }}?')">
+                <input type="hidden" name="tag" value="{{ t.name }}" />
                 <button class="kg-btn kg-btn--danger-ghost" type="submit" title="Delete">
                   <span class="kg-icon" style="--icon:url('/static/icons/trash.svg')"></span>
                 </button>

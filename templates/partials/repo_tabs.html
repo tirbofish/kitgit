@@ -31,6 +31,7 @@
     </a>
     {% endif %}
   </div>
+  {% if tab == "code" %}
   <details class="kg-dropdown">
     <summary class="kg-btn kg-btn--ghost">
       <span class="kg-icon" style="--icon:url('/static/icons/download.svg')"></span>
@@ -58,4 +59,5 @@
       </div>
     </div>
   </details>
+  {% endif %}
 </nav>

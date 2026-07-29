@@ -104,7 +104,8 @@
         {% if e.is_dir %}
           <span class="kg-icon" style="--icon:url('/static/icons/folder.svg')"></span>
           <a href="/{{ owner.username }}/{{ repo.name }}/tree/{{ current_branch }}/{{ e.path }}">{{ e.name }}</a>
-          <span class="kg-meta">{{ e.mode }}</span>
+          <span class="kg-tree__commit kg-meta" title="{{ e.commit_message }}">{{ e.commit_message }}</span>
+          <span class="kg-tree__time kg-meta">{{ e.commit_time }}</span>
           <a class="kg-tree__dl kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/archive.zip?ref={{ current_branch }}&path={{ e.path }}" title="Download {{ e.name }} as ZIP">
             <span class="kg-icon" style="--icon:url('/static/icons/download.svg')"></span>
             <span class="kg-sr-only">Download</span>
@@ -112,7 +113,8 @@
         {% else %}
           <span class="kg-icon" style="--icon:url('/static/icons/file.svg')"></span>
           <a href="/{{ owner.username }}/{{ repo.name }}/blob/{{ current_branch }}/{{ e.path }}">{{ e.name }}</a>
-          <span class="kg-meta">{{ e.mode }}</span>
+          <span class="kg-tree__commit kg-meta" title="{{ e.commit_message }}">{{ e.commit_message }}</span>
+          <span class="kg-tree__time kg-meta">{{ e.commit_time }}</span>
         {% endif %}
       </li>
       {% endfor %}

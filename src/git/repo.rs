@@ -391,6 +391,13 @@ pub fn list_commits(repo: &G2Repo, reference: &str, limit: usize) -> Result<Vec<
     Ok(out)
 }
 
+pub fn count_commits(repo: &G2Repo, reference: &str) -> Result<usize> {
+    let oid = resolve_ref(repo, reference)?;
+    let mut revwalk = repo.revwalk()?;
+    revwalk.push(oid)?;
+    Ok(revwalk.count())
+}
+
 pub fn get_commit(repo: &G2Repo, id: &str) -> Result<CommitInfo> {
     let oid = Oid::from_str(id)?;
     let c = repo.find_commit(oid)?;

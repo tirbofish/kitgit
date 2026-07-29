@@ -62,7 +62,7 @@
                 <p class="kg-meta" style="margin:0.25rem 0 0">{{ item.repo.description }}</p>
               {% endif %}
             </div>
-            <span class="kg-meta">{{ item.repo.updated_at }}</span>
+            <span class="kg-meta">{{ item.repo.updated_at.format("%Y-%m-%d") }}</span>
           </li>
           {% endfor %}
         </ul>
@@ -113,7 +113,7 @@
                 {{ item.owner }}/{{ item.repo_name }}#{{ item.number }} {{ item.title }}
               </a>
             </div>
-            <span class="kg-meta">{{ item.updated_at }}</span>
+            <span class="kg-meta">{{ item.updated_at.format("%Y-%m-%d") }}</span>
           </li>
           {% endfor %}
         </ul>
@@ -138,7 +138,7 @@
                 {{ item.owner }}/{{ item.repo_name }}#{{ item.number }} {{ item.title }}
               </a>
             </div>
-            <span class="kg-meta">{{ item.updated_at }}</span>
+            <span class="kg-meta">{{ item.updated_at.format("%Y-%m-%d") }}</span>
           </li>
           {% endfor %}
         </ul>

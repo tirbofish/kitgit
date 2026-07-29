@@ -5,7 +5,13 @@
 {% block content %}
 <section class="kg-section kg-auth">
   {% if !signups_enabled %}
-    <div class="kg-flash kg-flash--banner">{{ signup_disabled_message }}</div>
+    <div class="kg-flash kg-flash--banner">
+      {% if invite.is_empty() %}
+        {{ signup_disabled_message }}
+      {% else %}
+        Invite-only signup — your invite code unlocks registration.
+      {% endif %}
+    </div>
   {% endif %}
   <p class="kg-landing__brand">
     <span class="kg-mark__glyph" aria-hidden="true">狐</span>
@@ -15,12 +21,11 @@
   {% if let Some(err) = error %}
     <div class="kg-flash">{{ err }}</div>
   {% endif %}
-  {% if signups_enabled || !invite.is_empty() %}
   <form class="kg-form" method="post" action="/auth/signup" autocomplete="on">
     {% if !signups_enabled %}
     <label>
       invite code
-      <input type="text" name="invite" required value="{{ invite }}" autocomplete="off" spellcheck="false" />
+      <input type="text" name="invite" required value="{{ invite }}" autocomplete="off" spellcheck="false" placeholder="Enter invite code" />
     </label>
     {% endif %}
     <label>
@@ -43,17 +48,6 @@
       <button class="kg-btn" type="submit">create account</button>
     </div>
   </form>
-  {% else %}
-  <form class="kg-form" method="get" action="/auth/signup" style="margin-top:1rem">
-    <label>
-      invite code
-      <input type="text" name="invite" required autocomplete="off" spellcheck="false" placeholder="Enter an invite code" />
-    </label>
-    <div class="kg-actions">
-      <button class="kg-btn" type="submit">continue</button>
-    </div>
-  </form>
-  {% endif %}
   <p class="kg-meta" style="margin-top:1.25rem">
     Already have an account? <a href="/auth/login">Log in</a>
   </p>

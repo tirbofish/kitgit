@@ -234,13 +234,14 @@ pub async fn branch_rule_delete(
 
 #[derive(Deserialize)]
 pub struct RenameBranchForm {
+    pub branch: String,
     pub new_name: String,
 }
 
 pub async fn branch_rename(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path((owner, repo, branch)): Path<(String, String, String)>,
+    Path((owner, repo)): Path<(String, String)>,
     Form(form): Form<RenameBranchForm>,
 ) -> AppResult<Response> {
     let (repository, _, viewer, access) =
@@ -249,22 +250,38 @@ pub async fn branch_rename(
     if !access.can_write() {
         return Err(AppError::forbidden());
     }
+    let branch = form.branch.trim();
+    if branch.is_empty() {
+        return Err(AppError::bad("branch required"));
+    }
     if branch == repository.default_branch {
         return Err(AppError::bad("cannot rename default branch here"));
     }
     let new_name = form.new_name.trim();
-    if new_name.is_empty() || new_name.contains('/') {
+    // Allow hierarchical names like feat/foo; reject empty / traversal / whitespace.
+    if new_name.is_empty()
+        || new_name.contains("..")
+        || new_name.contains(char::is_whitespace)
+        || new_name.starts_with('/')
+        || new_name.ends_with('/')
+    {
         return Err(AppError::bad("invalid branch name"));
     }
     let grepo = git::open_bare(&state.config.repos_dir(), &owner, &repo)?;
-    git::rename_branch(&grepo, &branch, new_name)?;
+    git::rename_branch(&grepo, branch, new_name)?;
     Ok(redirect_see_other(&format!("/{owner}/{repo}/branches")))
+}
+
+#[derive(Deserialize)]
+pub struct DeleteBranchForm {
+    pub branch: String,
 }
 
 pub async fn branch_delete(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path((owner, repo, branch)): Path<(String, String, String)>,
+    Path((owner, repo)): Path<(String, String)>,
+    Form(form): Form<DeleteBranchForm>,
 ) -> AppResult<Response> {
     let (repository, _, viewer, access) =
         load_repo_context(&state, &owner, &repo, &headers).await?;
@@ -272,11 +289,15 @@ pub async fn branch_delete(
     if !access.can_write() {
         return Err(AppError::forbidden());
     }
+    let branch = form.branch.trim();
+    if branch.is_empty() {
+        return Err(AppError::bad("branch required"));
+    }
     if branch == repository.default_branch {
         return Err(AppError::bad("cannot delete default branch"));
     }
     let grepo = git::open_bare(&state.config.repos_dir(), &owner, &repo)?;
-    git::delete_branch(&grepo, &branch)?;
+    git::delete_branch(&grepo, branch)?;
     Ok(redirect_see_other(&format!("/{owner}/{repo}/branches")))
 }
 
@@ -322,13 +343,14 @@ pub async fn tag_create(
 
 #[derive(Deserialize)]
 pub struct RenameTagForm {
+    pub tag: String,
     pub new_name: String,
 }
 
 pub async fn tag_rename(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path((owner, repo, tag)): Path<(String, String, String)>,
+    Path((owner, repo)): Path<(String, String)>,
     Form(form): Form<RenameTagForm>,
 ) -> AppResult<Response> {
     let (repository, _, viewer, access) =
@@ -337,21 +359,25 @@ pub async fn tag_rename(
     if !access.can_write() {
         return Err(AppError::forbidden());
     }
+    let tag = form.tag.trim();
+    if tag.is_empty() {
+        return Err(AppError::bad("tag required"));
+    }
     let new_name = form.new_name.trim();
     if new_name.is_empty() || new_name.contains("..") {
         return Err(AppError::bad("invalid tag name"));
     }
     let grepo = git::open_bare(&state.config.repos_dir(), &owner, &repo)?;
-    git::rename_tag(&grepo, &tag, new_name)
+    git::rename_tag(&grepo, tag, new_name)
         .map_err(|e| AppError::bad(format!("rename tag failed: {e}")))?;
     if let Some(release) =
-        queries::rename_release_tag(&state.pool, repository.id, &tag, new_name).await?
+        queries::rename_release_tag(&state.pool, repository.id, tag, new_name).await?
     {
         let old_dir = state
             .config
             .releases_dir()
             .join(repository.id.to_string())
-            .join(&tag);
+            .join(tag);
         let new_dir = state
             .config
             .releases_dir()
@@ -368,10 +394,16 @@ pub async fn tag_rename(
     Ok(redirect_see_other(&format!("/{owner}/{repo}/branches")))
 }
 
+#[derive(Deserialize)]
+pub struct DeleteTagForm {
+    pub tag: String,
+}
+
 pub async fn tag_delete(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path((owner, repo, tag)): Path<(String, String, String)>,
+    Path((owner, repo)): Path<(String, String)>,
+    Form(form): Form<DeleteTagForm>,
 ) -> AppResult<Response> {
     let (_repository, _, viewer, access) =
         load_repo_context(&state, &owner, &repo, &headers).await?;
@@ -379,12 +411,16 @@ pub async fn tag_delete(
     if !access.can_write() {
         return Err(AppError::forbidden());
     }
+    let tag = form.tag.trim();
+    if tag.is_empty() {
+        return Err(AppError::bad("tag required"));
+    }
     let grepo = git::open_bare(&state.config.repos_dir(), &owner, &repo)?;
-    git::delete_tag(&grepo, &tag).map_err(|e| AppError::bad(format!("delete tag failed: {e}")))?;
+    git::delete_tag(&grepo, tag).map_err(|e| AppError::bad(format!("delete tag failed: {e}")))?;
     Ok(redirect_see_other(&format!("/{owner}/{repo}/branches")))
 }
 
-// ΓöÇΓöÇ account settings ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// ── account settings ─────────────────────────────────────────────────────────
 
 pub async fn account_settings(
     State(state): State<AppState>,
@@ -776,6 +812,25 @@ pub async fn account_delete_email(
         user.id,
         Some(user.id),
         "email.delete",
+        serde_json::json!({ "email_id": id }),
+    )
+    .await;
+    Ok(redirect_see_other("/settings/account"))
+}
+
+pub async fn account_set_primary_email(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> AppResult<Response> {
+    let user = require_login(&state.auth, &headers).await?;
+    queries::set_primary_email(&state.pool, user.id, id).await?;
+    record_audit(
+        &state,
+        &headers,
+        user.id,
+        Some(user.id),
+        "email.primary",
         serde_json::json!({ "email_id": id }),
     )
     .await;

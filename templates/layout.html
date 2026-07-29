@@ -44,7 +44,10 @@
     <main>
       {% block content %}{% endblock %}
     </main>
-    <footer class="kg-footer">kitgit</footer>
+    <footer class="kg-footer">
+      <span>kitgit</span>
+      <span class="kg-footer__timing">rendered in <!--kg-render-ms--></span>
+    </footer>
   </div>
   <script>
   (async () => {
