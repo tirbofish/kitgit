@@ -13,24 +13,55 @@
   {% include "partials/repo_tabs.html" %}
 
   <div class="kg-actions">
-    <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/issues?state=open"{% if state_filter == "open" %} aria-current="page"{% endif %}>open</a>
-    <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/issues?state=closed"{% if state_filter == "closed" %} aria-current="page"{% endif %}>closed</a>
+    <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/issues?state=open{% if let Some(lid) = label_filter %}&label={{ lid }}{% endif %}{% if let Some(mid) = milestone_filter %}&milestone={{ mid }}{% endif %}"{% if state_filter == "open" %} aria-current="page"{% endif %}>open</a>
+    <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/issues?state=closed{% if let Some(lid) = label_filter %}&label={{ lid }}{% endif %}{% if let Some(mid) = milestone_filter %}&milestone={{ mid }}{% endif %}"{% if state_filter == "closed" %} aria-current="page"{% endif %}>closed</a>
     {% if viewer.is_some() %}
       <a class="kg-btn" href="/{{ owner.username }}/{{ repo.name }}/issues/new">new issue</a>
     {% endif %}
+    <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/labels">labels</a>
+    <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/milestones">milestones</a>
   </div>
+
+  <form class="kg-form kg-filters" method="get" action="/{{ owner.username }}/{{ repo.name }}/issues">
+    <input type="hidden" name="state" value="{{ state_filter }}" />
+    <label>
+      label
+      <select name="label">
+        <option value="">any</option>
+        {% for l in labels %}
+          <option value="{{ l.id }}"{% if let Some(lid) = label_filter %}{% if lid.to_string() == l.id.to_string() %} selected{% endif %}{% endif %}>{{ l.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      milestone
+      <select name="milestone">
+        <option value="">any</option>
+        {% for m in milestones %}
+          <option value="{{ m.id }}"{% if let Some(mid) = milestone_filter %}{% if mid.to_string() == m.id.to_string() %} selected{% endif %}{% endif %}>{{ m.title }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="kg-btn kg-btn--ghost" type="submit">filter</button>
+  </form>
 
   {% if issues.is_empty() %}
     <p class="kg-muted">No {{ state_filter }} issues.</p>
   {% else %}
     <ul class="kg-list">
-      {% for issue in issues %}
+      {% for item in issues %}
       <li>
         <span>
-          <span class="kg-badge {% if issue.state == "open" %}kg-badge--open{% else %}kg-badge--closed{% endif %}">{{ issue.state }}</span>
-          <a href="/{{ owner.username }}/{{ repo.name }}/issues/{{ issue.number }}">#{{ issue.number }} {{ issue.title }}</a>
+          <span class="kg-badge {% if item.issue.state == "open" %}kg-badge--open{% else %}kg-badge--closed{% endif %}">{{ item.issue.state }}</span>
+          <a href="/{{ owner.username }}/{{ repo.name }}/issues/{{ item.issue.number }}">#{{ item.issue.number }} {{ item.issue.title }}</a>
+          {% for l in item.labels %}
+            <span class="kg-label-chip" style="background:{{ l.bg_color() }};color:{{ l.text_color() }}">{{ l.name }}</span>
+          {% endfor %}
+          {% if let Some(m) = item.milestone %}
+            <span class="kg-meta">milestone: {{ m.title }}</span>
+          {% endif %}
         </span>
-        <span class="kg-meta">{{ issue.updated_at }}</span>
+        <span class="kg-meta">{{ item.issue.updated_at }}</span>
       </li>
       {% endfor %}
     </ul>

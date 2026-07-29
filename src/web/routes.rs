@@ -20,7 +20,7 @@ use serde::Deserialize;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-// â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ├óΓÇ¥Γé¼├óΓÇ¥Γé¼ helpers ├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼
 
 pub type AppResult<T> = Result<T, AppError>;
 
@@ -209,7 +209,7 @@ pub fn avatar_url_for(user: &User) -> String {
         return format!("/avatars/{}?v={}", user.id, bust);
     }
     // External OIDC pictures are fine in <img src>, but never use our own
-    // /avatars/{id} URL as avatar_url â€” that creates a redirect loop.
+    // /avatars/{id} URL as avatar_url ├óΓé¼ΓÇ¥ that creates a redirect loop.
     if let Some(ref url) = user.avatar_url {
         if !url.is_empty() && !is_self_avatar_url(url, user.id) {
             return url.clone();
@@ -333,12 +333,12 @@ fn language_stat_views(stats: serde_json::Value) -> Vec<LanguageStatView> {
 
 fn reaction_label(emoji: &str) -> String {
     match emoji {
-        "+1" => "ðŸ‘".into(),
-        "-1" => "ðŸ‘Ž".into(),
-        "heart" => "â¤ï¸".into(),
-        "laugh" => "ðŸ˜„".into(),
-        "rocket" => "ðŸš€".into(),
-        "eyes" => "ðŸ‘€".into(),
+        "+1" => "├░┼╕ΓÇÿ┬ì".into(),
+        "-1" => "├░┼╕ΓÇÿ┼╜".into(),
+        "heart" => "├ó┬¥┬ñ├»┬╕┬Å".into(),
+        "laugh" => "├░┼╕╦£ΓÇ₧".into(),
+        "rocket" => "├░┼╕┼íΓé¼".into(),
+        "eyes" => "├░┼╕ΓÇÿΓé¼".into(),
         other => other.to_string(),
     }
 }
@@ -383,9 +383,9 @@ enum CommitRefKind {
     Pull,
     /// Explicit issue wording (`issue #N`).
     Issue,
-    /// Closing keywords (`fixes #N`, `closes #N`, …): prefer issue if it exists, else pull.
+    /// Closing keywords (`fixes #N`, `closes #N`, ΓÇª): prefer issue if it exists, else pull.
     Closing,
-    /// Bare `#N` — default to issues.
+    /// Bare `#N` ΓÇö default to issues.
     Bare,
 }
 
@@ -451,7 +451,7 @@ async fn linkify_commit_message(
     while i < bytes.len() {
         if bytes[i] == b'#' {
             if let Some((len, number)) = parse_hash_number(&message[i..]) {
-                // Avoid matching mid-word like `C#1` or `foo#1` — require start or non-alnum before.
+                // Avoid matching mid-word like `C#1` or `foo#1` ΓÇö require start or non-alnum before.
                 let ok_boundary = i == 0
                     || !message[..i]
                         .chars()
@@ -641,7 +641,7 @@ fn parse_diff_files(diff: &str) -> Vec<DiffFileView> {
         } else if let Some((_, ref mut lines)) = current {
             lines.push(line.to_string());
         } else {
-            // Preamble without a file header â€” treat as one blob.
+            // Preamble without a file header ├óΓé¼ΓÇ¥ treat as one blob.
             current = Some(("diff".into(), vec![line.to_string()]));
         }
     }
@@ -708,7 +708,7 @@ async fn latest_commit_view(
     Some(commit_view(state, c, extracted).await)
 }
 
-fn clone_urls(state: &AppState, owner: &str, repo: &str) -> (String, String) {
+pub fn clone_urls(state: &AppState, owner: &str, repo: &str) -> (String, String) {
     let base = state.config.public_url.trim_end_matches('/');
     // Always advertise the classic `.git` HTTP URL (middleware strips it).
     let http = format!("{base}/{owner}/{repo}.git");
@@ -718,7 +718,7 @@ fn clone_urls(state: &AppState, owner: &str, repo: &str) -> (String, String) {
         .unwrap_or_else(|| "localhost".into());
     let port = state.config.ssh_advertise_port();
     // Port 22: GitHub-style `git@host:owner/repo.git` (default SSH port).
-    // Other ports: ssh:// form — `git@host:2222/path` is parsed as path `2222/path` on port 22.
+    // Other ports: ssh:// form ΓÇö `git@host:2222/path` is parsed as path `2222/path` on port 22.
     let ssh = if port == 22 {
         format!("git@{host}:{owner}/{repo}.git")
     } else {
@@ -916,7 +916,7 @@ fn map_activity_rows(
     activities
 }
 
-// â”€â”€ home / auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ├óΓÇ¥Γé¼├óΓÇ¥Γé¼ home / auth ├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼
 
 pub async fn home(
     State(state): State<AppState>,
@@ -1141,7 +1141,7 @@ pub async fn auth_mfa_submit(
     }
 }
 
-/// Legacy OIDC browser start — disabled so users never leave kitgit UI.
+/// Legacy OIDC browser start ΓÇö disabled so users never leave kitgit UI.
 pub async fn auth_oidc_start() -> AppResult<Response> {
     Ok(redirect("/auth/login"))
 }
@@ -1316,7 +1316,7 @@ pub async fn auth_logout(
     Ok(redirect_with_cookie("/", clear_session_cookie()))
 }
 
-// â”€â”€ site admin panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ├óΓÇ¥Γé¼├óΓÇ¥Γé¼ site admin panel ├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼
 
 async fn require_site_admin(auth: &AuthState, headers: &HeaderMap) -> AppResult<User> {
     let user = require_login(auth, headers).await?;
@@ -1742,7 +1742,7 @@ pub async fn notifications_mark_all_read(
     Ok(redirect_see_other("/notifications"))
 }
 
-// â”€â”€ new repo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── new repo ─────────────────────────────────────────────────────────────────
 
 pub async fn new_repo_form(
     State(state): State<AppState>,
@@ -1833,7 +1833,7 @@ pub async fn new_repo(
     Ok(redirect_see_other(&format!("/{}/{}", user.username, name)))
 }
 
-// â”€â”€ profile settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ├óΓÇ¥Γé¼├óΓÇ¥Γé¼ profile settings ├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼
 
 pub async fn profile_settings(
     State(state): State<AppState>,
@@ -1948,7 +1948,7 @@ pub async fn profile_settings_save(
     Ok(redirect_see_other("/settings/profile"))
 }
 
-// â”€â”€ SSH keys â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ├óΓÇ¥Γé¼├óΓÇ¥Γé¼ SSH keys ├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼
 
 pub async fn keys_settings(
     State(state): State<AppState>,
@@ -2043,7 +2043,7 @@ pub async fn keys_delete(
     Ok(redirect_see_other("/settings/keys"))
 }
 
-// â”€â”€ avatar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ├óΓÇ¥Γé¼├óΓÇ¥Γé¼ avatar ├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼
 
 pub async fn avatar(
     State(state): State<AppState>,
@@ -2090,7 +2090,7 @@ pub async fn avatar(
         .unwrap())
 }
 
-// â”€â”€ profile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ├óΓÇ¥Γé¼├óΓÇ¥Γé¼ profile ├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼
 
 pub async fn profile(
     State(state): State<AppState>,
@@ -2132,7 +2132,7 @@ pub async fn profile(
     })
 }
 
-// â”€â”€ repository browse â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ├óΓÇ¥Γé¼├óΓÇ¥Γé¼ repository browse ├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼
 
 pub async fn repo_home(
     State(state): State<AppState>,
@@ -2779,11 +2779,107 @@ async fn commit_views(
     out
 }
 
-// â”€â”€ issues â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ├óΓÇ¥Γé¼├óΓÇ¥Γé¼ issues ├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼
 
 #[derive(Deserialize)]
 pub struct StateFilter {
     pub state: Option<String>,
+    pub label: Option<Uuid>,
+    pub milestone: Option<Uuid>,
+}
+
+fn parse_optional_uuid(raw: &Option<String>) -> Option<Uuid> {
+    raw.as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .and_then(|s| Uuid::parse_str(s).ok())
+}
+
+async fn build_issue_list_items(
+    pool: &sqlx::PgPool,
+    issues: Vec<crate::db::models::Issue>,
+) -> AppResult<Vec<IssueListItem>> {
+    let ids: Vec<Uuid> = issues.iter().map(|i| i.id).collect();
+    let label_rows = queries::labels_for_issues(pool, &ids).await?;
+    let mut labels_by_issue: std::collections::HashMap<Uuid, Vec<crate::db::models::Label>> =
+        std::collections::HashMap::new();
+    for (issue_id, label) in label_rows {
+        labels_by_issue.entry(issue_id).or_default().push(label);
+    }
+    let milestone_ids: Vec<Uuid> = issues.iter().filter_map(|i| i.milestone_id).collect();
+    let milestones = queries::get_milestones_by_ids(pool, &milestone_ids).await?;
+    let milestones_by_id: std::collections::HashMap<Uuid, crate::db::models::Milestone> =
+        milestones.into_iter().map(|m| (m.id, m)).collect();
+    Ok(issues
+        .into_iter()
+        .map(|issue| {
+            let milestone = issue
+                .milestone_id
+                .and_then(|id| milestones_by_id.get(&id).cloned());
+            let labels = labels_by_issue.remove(&issue.id).unwrap_or_default();
+            IssueListItem {
+                issue,
+                labels,
+                milestone,
+            }
+        })
+        .collect())
+}
+
+async fn build_pull_list_items(
+    pool: &sqlx::PgPool,
+    pulls: Vec<crate::db::models::PullRequest>,
+) -> AppResult<Vec<PullListItem>> {
+    let ids: Vec<Uuid> = pulls.iter().map(|p| p.id).collect();
+    let label_rows = queries::labels_for_pulls(pool, &ids).await?;
+    let mut labels_by_pull: std::collections::HashMap<Uuid, Vec<crate::db::models::Label>> =
+        std::collections::HashMap::new();
+    for (pull_id, label) in label_rows {
+        labels_by_pull.entry(pull_id).or_default().push(label);
+    }
+    let milestone_ids: Vec<Uuid> = pulls.iter().filter_map(|p| p.milestone_id).collect();
+    let milestones = queries::get_milestones_by_ids(pool, &milestone_ids).await?;
+    let milestones_by_id: std::collections::HashMap<Uuid, crate::db::models::Milestone> =
+        milestones.into_iter().map(|m| (m.id, m)).collect();
+    Ok(pulls
+        .into_iter()
+        .map(|pull| {
+            let milestone = pull
+                .milestone_id
+                .and_then(|id| milestones_by_id.get(&id).cloned());
+            let labels = labels_by_pull.remove(&pull.id).unwrap_or_default();
+            PullListItem {
+                pull,
+                labels,
+                milestone,
+            }
+        })
+        .collect())
+}
+
+fn label_options(
+    all: Vec<crate::db::models::Label>,
+    selected: &[crate::db::models::Label],
+) -> Vec<LabelOption> {
+    let selected_ids: std::collections::HashSet<Uuid> = selected.iter().map(|l| l.id).collect();
+    all.into_iter()
+        .map(|label| LabelOption {
+            selected: selected_ids.contains(&label.id),
+            label,
+        })
+        .collect()
+}
+
+fn milestone_options(
+    all: Vec<crate::db::models::Milestone>,
+    selected_id: Option<Uuid>,
+) -> Vec<MilestoneOption> {
+    all.into_iter()
+        .map(|milestone| MilestoneOption {
+            selected: Some(milestone.id) == selected_id,
+            milestone,
+        })
+        .collect()
 }
 
 pub async fn issues_list(
@@ -2797,20 +2893,39 @@ pub async fn issues_list(
     if !repository.issues_enabled {
         return Err(AppError::not_found());
     }
-    // Default to open-only (GitHub-style) when no state query param is set.
-    let filter = match q.state.as_deref() {
+    let state_filter = match q.state.as_deref() {
         Some("closed") => "closed",
+        Some("all") => "all",
         _ => "open",
     };
-    let issues = queries::list_issues(&state.pool, repository.id, Some(filter)).await?;
+    let state_arg = if state_filter == "all" {
+        None
+    } else {
+        Some(state_filter)
+    };
+    let issues = queries::list_issues_filtered(
+        &state.pool,
+        repository.id,
+        state_arg,
+        q.label,
+        q.milestone,
+    )
+    .await?;
+    let items = build_issue_list_items(&state.pool, issues).await?;
+    let labels = queries::list_labels(&state.pool, repository.id).await?;
+    let milestones = queries::list_milestones(&state.pool, repository.id, None).await?;
     let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
     Ok(IssuesListTemplate {
         viewer,
         owner: owner_user,
         repo: repository,
         access,
-        issues,
-        state_filter: filter.to_string(),
+        issues: items,
+        labels,
+        milestones,
+        state_filter: state_filter.to_string(),
+        label_filter: q.label,
+        milestone_filter: q.milestone,
         clone_http,
         clone_ssh,
     })
@@ -2827,12 +2942,16 @@ pub async fn issue_new(
         return Err(AppError::not_found());
     }
     let _ = viewer.as_ref().ok_or_else(AppError::unauthorized)?;
+    let labels = queries::list_labels(&state.pool, repository.id).await?;
+    let milestones = queries::list_open_milestones(&state.pool, repository.id).await?;
     let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
     Ok(IssueNewTemplate {
         viewer,
         owner: owner_user,
         repo: repository,
         access,
+        labels,
+        milestones,
         error: None,
         clone_http,
         clone_ssh,
@@ -2843,6 +2962,9 @@ pub async fn issue_new(
 pub struct IssueCreateForm {
     pub title: String,
     pub body: Option<String>,
+    #[serde(default)]
+    pub label_id: Vec<Uuid>,
+    pub milestone_id: Option<String>,
 }
 
 pub async fn issue_create(
@@ -2859,12 +2981,16 @@ pub async fn issue_create(
     let user = viewer.ok_or_else(AppError::unauthorized)?;
     let title = form.title.trim();
     if title.is_empty() {
+        let labels = queries::list_labels(&state.pool, repository.id).await?;
+        let milestones = queries::list_open_milestones(&state.pool, repository.id).await?;
         let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
         return Ok(IssueNewTemplate {
             viewer: Some(user),
             owner: owner_user,
             repo: repository,
             access,
+            labels,
+            milestones,
             error: Some("title required".into()),
             clone_http,
             clone_ssh,
@@ -2875,6 +3001,19 @@ pub async fn issue_create(
     let number = queries::next_issue_number(&state.pool, repository.id).await?;
     let issue =
         queries::create_issue(&state.pool, repository.id, user.id, number, title, &body).await?;
+    let label_ids =
+        queries::filter_repo_label_ids(&state.pool, repository.id, &form.label_id).await?;
+    if !label_ids.is_empty() {
+        queries::set_issue_labels(&state.pool, issue.id, &label_ids).await?;
+    }
+    if let Some(mid) = parse_optional_uuid(&form.milestone_id) {
+        if queries::get_milestone(&state.pool, repository.id, mid)
+            .await?
+            .is_some()
+        {
+            queries::set_issue_milestone(&state.pool, issue.id, Some(mid)).await?;
+        }
+    }
     queries::record_activity(
         &state.pool,
         Some(user.id),
@@ -2934,6 +3073,24 @@ pub async fn issue_view(
         viewer.as_ref().map(|u| u.id),
     )
     .await?;
+    let labels = queries::list_issue_labels(&state.pool, issue.id).await?;
+    let all_labels = queries::list_labels(&state.pool, repository.id).await?;
+    let label_options = label_options(all_labels, &labels);
+    let milestone = match issue.milestone_id {
+        Some(id) => queries::get_milestone(&state.pool, repository.id, id).await?,
+        None => None,
+    };
+    let mut milestone_choices = queries::list_open_milestones(&state.pool, repository.id).await?;
+    if let Some(ref m) = milestone {
+        if m.state != "open" && !milestone_choices.iter().any(|x| x.id == m.id) {
+            milestone_choices.push(m.clone());
+        }
+    }
+    let milestone_options = milestone_options(milestone_choices, issue.milestone_id);
+    let can_triage = viewer
+        .as_ref()
+        .map(|u| access.can_write() || issue.author_id == u.id)
+        .unwrap_or(false);
     let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
     Ok(IssueViewTemplate {
         viewer,
@@ -2945,9 +3102,78 @@ pub async fn issue_view(
         issue,
         author,
         comments,
+        labels,
+        label_options,
+        milestone,
+        milestone_options,
+        can_triage,
         clone_http,
         clone_ssh,
     })
+}
+
+#[derive(Deserialize)]
+pub struct LabelsAssignForm {
+    #[serde(default)]
+    pub label_id: Vec<Uuid>,
+}
+
+#[derive(Deserialize)]
+pub struct MilestoneAssignForm {
+    pub milestone_id: Option<String>,
+}
+
+pub async fn issue_labels_save(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo, number)): Path<(String, String, i32)>,
+    Form(form): Form<LabelsAssignForm>,
+) -> AppResult<Response> {
+    let (repository, _o, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let user = viewer.ok_or_else(AppError::unauthorized)?;
+    let issue = queries::get_issue(&state.pool, repository.id, number)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    if !(access.can_write() || issue.author_id == user.id) {
+        return Err(AppError::forbidden());
+    }
+    let label_ids =
+        queries::filter_repo_label_ids(&state.pool, repository.id, &form.label_id).await?;
+    queries::set_issue_labels(&state.pool, issue.id, &label_ids).await?;
+    Ok(redirect_see_other(&format!(
+        "/{owner}/{repo}/issues/{number}"
+    )))
+}
+
+pub async fn issue_milestone_save(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo, number)): Path<(String, String, i32)>,
+    Form(form): Form<MilestoneAssignForm>,
+) -> AppResult<Response> {
+    let (repository, _o, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let user = viewer.ok_or_else(AppError::unauthorized)?;
+    let issue = queries::get_issue(&state.pool, repository.id, number)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    if !(access.can_write() || issue.author_id == user.id) {
+        return Err(AppError::forbidden());
+    }
+    let milestone_id = parse_optional_uuid(&form.milestone_id);
+    if let Some(mid) = milestone_id {
+        if queries::get_milestone(&state.pool, repository.id, mid)
+            .await?
+            .is_none()
+        {
+            return Err(AppError::bad("unknown milestone"));
+        }
+    }
+    queries::set_issue_milestone(&state.pool, issue.id, milestone_id).await?;
+    Ok(redirect_see_other(&format!(
+        "/{owner}/{repo}/issues/{number}"
+    )))
 }
 
 #[derive(Deserialize)]
@@ -3073,7 +3299,7 @@ pub async fn issue_reopen(
     )))
 }
 
-// â”€â”€ pull requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- pull requests ---
 
 pub async fn pulls_list(
     State(state): State<AppState>,
@@ -3086,19 +3312,33 @@ pub async fn pulls_list(
     if !repository.pulls_enabled {
         return Err(AppError::not_found());
     }
-    let filter = q
-        .state
-        .as_deref()
-        .filter(|s| *s == "open" || *s == "closed" || *s == "merged");
-    let pulls = queries::list_pulls(&state.pool, repository.id, filter).await?;
+    let filter = match q.state.as_deref() {
+        Some("closed") | Some("merged") | Some("open") => q.state.as_deref(),
+        _ => Some("open"),
+    };
+    let pulls = queries::list_pulls_filtered(
+        &state.pool,
+        repository.id,
+        filter,
+        q.label,
+        q.milestone,
+    )
+    .await?;
+    let items = build_pull_list_items(&state.pool, pulls).await?;
+    let labels = queries::list_labels(&state.pool, repository.id).await?;
+    let milestones = queries::list_milestones(&state.pool, repository.id, None).await?;
     let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
     Ok(PullsListTemplate {
         viewer,
         owner: owner_user,
         repo: repository,
         access,
-        pulls,
+        pulls: items,
+        labels,
+        milestones,
         state_filter: filter.unwrap_or("open").to_string(),
+        label_filter: q.label,
+        milestone_filter: q.milestone,
         clone_http,
         clone_ssh,
     })
@@ -3119,6 +3359,8 @@ pub async fn pull_new(
         .ok()
         .and_then(|g| git::list_branches(&g).ok())
         .unwrap_or_default();
+    let labels = queries::list_labels(&state.pool, repository.id).await?;
+    let milestones = queries::list_open_milestones(&state.pool, repository.id).await?;
     let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
     Ok(PullNewTemplate {
         viewer,
@@ -3126,6 +3368,8 @@ pub async fn pull_new(
         repo: repository,
         access,
         branches,
+        labels,
+        milestones,
         error: None,
         clone_http,
         clone_ssh,
@@ -3139,6 +3383,9 @@ pub struct PullCreateForm {
     pub body: Option<String>,
     pub source_branch: String,
     pub target_branch: String,
+    #[serde(default)]
+    pub label_id: Vec<Uuid>,
+    pub milestone_id: Option<String>,
 }
 
 pub async fn pull_create(
@@ -3161,6 +3408,8 @@ pub async fn pull_create(
             .ok()
             .and_then(|g| git::list_branches(&g).ok())
             .unwrap_or_default();
+        let labels = queries::list_labels(&state.pool, repository.id).await?;
+        let milestones = queries::list_open_milestones(&state.pool, repository.id).await?;
         let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
         return Ok(PullNewTemplate {
             viewer: Some(user),
@@ -3168,6 +3417,8 @@ pub async fn pull_create(
             repo: repository,
             access,
             branches,
+            labels,
+            milestones,
             error: Some("title, source, and target required".into()),
             clone_http,
             clone_ssh,
@@ -3191,6 +3442,19 @@ pub async fn pull_create(
         target,
     )
     .await?;
+    let label_ids =
+        queries::filter_repo_label_ids(&state.pool, repository.id, &form.label_id).await?;
+    if !label_ids.is_empty() {
+        queries::set_pull_labels(&state.pool, pull.id, &label_ids).await?;
+    }
+    if let Some(mid) = parse_optional_uuid(&form.milestone_id) {
+        if queries::get_milestone(&state.pool, repository.id, mid)
+            .await?
+            .is_some()
+        {
+            queries::set_pull_milestone(&state.pool, pull.id, Some(mid)).await?;
+        }
+    }
     queries::record_activity(
         &state.pool,
         Some(user.id),
@@ -3295,6 +3559,25 @@ pub async fn pull_view(
         merge_styles.push("rebase".to_string());
     }
 
+    let labels = queries::list_pull_labels(&state.pool, pull.id).await?;
+    let all_labels = queries::list_labels(&state.pool, repository.id).await?;
+    let label_options = label_options(all_labels, &labels);
+    let milestone = match pull.milestone_id {
+        Some(id) => queries::get_milestone(&state.pool, repository.id, id).await?,
+        None => None,
+    };
+    let mut milestone_choices = queries::list_open_milestones(&state.pool, repository.id).await?;
+    if let Some(ref m) = milestone {
+        if m.state != "open" && !milestone_choices.iter().any(|x| x.id == m.id) {
+            milestone_choices.push(m.clone());
+        }
+    }
+    let milestone_options = milestone_options(milestone_choices, pull.milestone_id);
+    let can_triage = viewer
+        .as_ref()
+        .map(|u| access.can_write() || pull.author_id == u.id)
+        .unwrap_or(false);
+
     let conversation_count = comments.len() + 1;
     let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
     Ok(PullViewTemplate {
@@ -3313,9 +3596,67 @@ pub async fn pull_view(
         tab,
         can_merge,
         merge_styles,
+        labels,
+        label_options,
+        milestone,
+        milestone_options,
+        can_triage,
         clone_http,
         clone_ssh,
     })
+}
+
+pub async fn pull_labels_save(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo, number)): Path<(String, String, i32)>,
+    Form(form): Form<LabelsAssignForm>,
+) -> AppResult<Response> {
+    let (repository, _o, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let user = viewer.ok_or_else(AppError::unauthorized)?;
+    let pull = queries::get_pull(&state.pool, repository.id, number)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    if !(access.can_write() || pull.author_id == user.id) {
+        return Err(AppError::forbidden());
+    }
+    let label_ids =
+        queries::filter_repo_label_ids(&state.pool, repository.id, &form.label_id).await?;
+    queries::set_pull_labels(&state.pool, pull.id, &label_ids).await?;
+    Ok(redirect_see_other(&format!(
+        "/{owner}/{repo}/pulls/{number}"
+    )))
+}
+
+pub async fn pull_milestone_save(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo, number)): Path<(String, String, i32)>,
+    Form(form): Form<MilestoneAssignForm>,
+) -> AppResult<Response> {
+    let (repository, _o, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let user = viewer.ok_or_else(AppError::unauthorized)?;
+    let pull = queries::get_pull(&state.pool, repository.id, number)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    if !(access.can_write() || pull.author_id == user.id) {
+        return Err(AppError::forbidden());
+    }
+    let milestone_id = parse_optional_uuid(&form.milestone_id);
+    if let Some(mid) = milestone_id {
+        if queries::get_milestone(&state.pool, repository.id, mid)
+            .await?
+            .is_none()
+        {
+            return Err(AppError::bad("unknown milestone"));
+        }
+    }
+    queries::set_pull_milestone(&state.pool, pull.id, milestone_id).await?;
+    Ok(redirect_see_other(&format!(
+        "/{owner}/{repo}/pulls/{number}"
+    )))
 }
 
 pub async fn pull_comment(
@@ -3494,7 +3835,7 @@ pub async fn pull_close(
     Ok(redirect_see_other(&format!("/{owner}/{repo}/pulls/{number}")))
 }
 
-// â”€â”€ releases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ├óΓÇ¥Γé¼├óΓÇ¥Γé¼ releases ├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼
 
 
 fn asset_views(assets: Vec<crate::db::models::ReleaseAsset>) -> Vec<ReleaseAssetView> {
@@ -4142,7 +4483,7 @@ fn serve_file(path: &std::path::Path, filename: &str, content_type: &str) -> App
         .unwrap())
 }
 
-// â”€â”€ repo settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ├óΓÇ¥Γé¼├óΓÇ¥Γé¼ repo settings ├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼
 
 pub async fn repo_settings(
     State(state): State<AppState>,

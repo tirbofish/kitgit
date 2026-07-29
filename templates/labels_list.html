@@ -1,0 +1,15 @@
+{% extends "layout.html" %}
+{% block title %}labels · {{ owner.username }}/{{ repo.name }} — kitgit{% endblock %}
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title"><a href="/{{ owner.username }}/{{ repo.name }}">{{ owner.username }}/{{ repo.name }}</a> · labels</h1>
+  {% let tab = "settings" %}
+  {% let archive_ref = repo.default_branch %}
+  {% include "partials/repo_tabs.html" %}
+  {% if let Some(err) = error %}<div class="kg-flash">{{ err }}</div>{% endif %}
+  <div class="kg-actions"><a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/milestones">milestones</a><a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/settings">settings</a></div>
+  {% if labels.is_empty() %}<p class="kg-muted">No labels yet.</p>{% else %}
+  <ul class="kg-list">{% for l in labels %}<li><span><span class="kg-label-chip" style="background:{{ l.bg_color() }};color:{{ l.text_color() }}">{{ l.name }}</span> <span class="kg-meta">{{ l.description }}</span></span>{% if access.can_admin() %}<form method="post" action="/{{ owner.username }}/{{ repo.name }}/labels/{{ l.id }}/delete"><button class="kg-btn kg-btn--danger-ghost" type="submit">delete</button></form>{% endif %}</li>{% if access.can_admin() %}<li><form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/labels/{{ l.id }}/update"><label>name <input name="name" value="{{ l.name }}" required /></label><label>color <input name="color" value="{{ l.color }}" required /></label><label>description <input name="description" value="{{ l.description }}" /></label><button class="kg-btn kg-btn--ghost" type="submit">update</button></form></li>{% endif %}{% endfor %}</ul>{% endif %}
+  {% if access.can_admin() %}<form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/labels"><span class="kg-kicker">new label</span><label>name <input name="name" required /></label><label>color <input name="color" value="0969da" required /></label><label>description <input name="description" /></label><button class="kg-btn" type="submit">create label</button></form>{% endif %}
+</section>
+{% endblock %}

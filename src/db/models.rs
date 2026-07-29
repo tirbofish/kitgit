@@ -204,6 +204,7 @@ pub struct Issue {
     pub title: String,
     pub body: String,
     pub state: String,
+    pub milestone_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub closed_at: Option<DateTime<Utc>>,
@@ -222,9 +223,55 @@ pub struct PullRequest {
     pub target_branch: String,
     pub merge_commit: Option<String>,
     pub source_repo_id: Option<Uuid>,
+    pub milestone_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub merged_at: Option<DateTime<Utc>>,
+    pub closed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct Label {
+    pub id: Uuid,
+    pub repo_id: Uuid,
+    pub name: String,
+    pub color: String,
+    pub description: String,
+    pub created_at: DateTime<Utc>,
+}
+
+impl Label {
+    pub fn bg_color(&self) -> String {
+        format!("#{}", self.color.trim_start_matches('#'))
+    }
+
+    pub fn text_color(&self) -> &'static str {
+        let hex = self.color.trim_start_matches('#');
+        if hex.len() != 6 {
+            return "#ffffff";
+        }
+        let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as f32;
+        let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as f32;
+        let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as f32;
+        let lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
+        if lum > 0.55 {
+            "#111111"
+        } else {
+            "#ffffff"
+        }
+    }
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct Milestone {
+    pub id: Uuid,
+    pub repo_id: Uuid,
+    pub title: String,
+    pub description: String,
+    pub due_on: Option<NaiveDate>,
+    pub state: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
     pub closed_at: Option<DateTime<Utc>>,
 }
 
