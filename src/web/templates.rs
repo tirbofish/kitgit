@@ -1,7 +1,7 @@
 use crate::og::SocialMeta;
 use crate::db::models::{
-    Access, BranchRule, CommitDay, GpgKey, Issue, Notification, PullRequest, Release, RepoMirror,
-    Repository, SshKey, User, UserEmail,
+    Access, BranchRule, CommitDay, GpgKey, Issue, Label, Milestone, Notification, PullRequest,
+    Release, RepoMirror, Repository, SshKey, User, UserEmail,
 };
 use crate::db::DeployKey;
 use askama::Template;
@@ -9,7 +9,7 @@ use askama_web::WebTemplate;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-// ── view models ──────────────────────────────────────────────────────────────
+// ΓöÇΓöÇ view models ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 pub struct ActivityRow {
     pub kind: String,
@@ -97,6 +97,28 @@ pub struct WebhookDeliveryView {
     pub created_at: String,
 }
 
+pub struct LabelOption {
+    pub label: Label,
+    pub selected: bool,
+}
+
+pub struct MilestoneOption {
+    pub milestone: Milestone,
+    pub selected: bool,
+}
+
+pub struct IssueListItem {
+    pub issue: Issue,
+    pub labels: Vec<Label>,
+    pub milestone: Option<Milestone>,
+}
+
+pub struct PullListItem {
+    pub pull: PullRequest,
+    pub labels: Vec<Label>,
+    pub milestone: Option<Milestone>,
+}
+
 pub struct LanguageStatView {
     pub name: String,
     pub percent: f64,
@@ -128,7 +150,7 @@ pub struct ReleaseAssetView {
     pub content_type: String,
 }
 
-// ── page templates ───────────────────────────────────────────────────────────
+// ΓöÇΓöÇ page templates ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 #[derive(Template, WebTemplate)]
 #[template(path = "home.html")]
@@ -393,8 +415,12 @@ pub struct IssuesListTemplate {
     pub owner: User,
     pub repo: Repository,
     pub access: Access,
-    pub issues: Vec<Issue>,
+    pub issues: Vec<IssueListItem>,
+    pub labels: Vec<Label>,
+    pub milestones: Vec<Milestone>,
     pub state_filter: String,
+    pub label_filter: Option<Uuid>,
+    pub milestone_filter: Option<Uuid>,
     pub clone_http: String,
     pub clone_ssh: String,
 }
@@ -406,6 +432,8 @@ pub struct IssueNewTemplate {
     pub owner: User,
     pub repo: Repository,
     pub access: Access,
+    pub labels: Vec<Label>,
+    pub milestones: Vec<Milestone>,
     pub error: Option<String>,
     pub clone_http: String,
     pub clone_ssh: String,
@@ -423,6 +451,11 @@ pub struct IssueViewTemplate {
     pub author_avatar: String,
     pub body_html: String,
     pub comments: Vec<CommentView>,
+    pub labels: Vec<Label>,
+    pub label_options: Vec<LabelOption>,
+    pub milestone: Option<Milestone>,
+    pub milestone_options: Vec<MilestoneOption>,
+    pub can_triage: bool,
     pub clone_http: String,
     pub clone_ssh: String,
 }
@@ -434,8 +467,12 @@ pub struct PullsListTemplate {
     pub owner: User,
     pub repo: Repository,
     pub access: Access,
-    pub pulls: Vec<PullRequest>,
+    pub pulls: Vec<PullListItem>,
+    pub labels: Vec<Label>,
+    pub milestones: Vec<Milestone>,
     pub state_filter: String,
+    pub label_filter: Option<Uuid>,
+    pub milestone_filter: Option<Uuid>,
     pub clone_http: String,
     pub clone_ssh: String,
 }
@@ -448,6 +485,8 @@ pub struct PullNewTemplate {
     pub repo: Repository,
     pub access: Access,
     pub branches: Vec<String>,
+    pub labels: Vec<Label>,
+    pub milestones: Vec<Milestone>,
     pub error: Option<String>,
     pub clone_http: String,
     pub clone_ssh: String,
@@ -472,6 +511,38 @@ pub struct PullViewTemplate {
     pub conversation_count: usize,
     pub can_merge: bool,
     pub merge_styles: Vec<String>,
+    pub labels: Vec<Label>,
+    pub label_options: Vec<LabelOption>,
+    pub milestone: Option<Milestone>,
+    pub milestone_options: Vec<MilestoneOption>,
+    pub can_triage: bool,
+    pub clone_http: String,
+    pub clone_ssh: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "labels_list.html")]
+pub struct LabelsListTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub labels: Vec<Label>,
+    pub error: Option<String>,
+    pub clone_http: String,
+    pub clone_ssh: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "milestones_list.html")]
+pub struct MilestonesListTemplate {
+    pub viewer: Option<User>,
+    pub owner: User,
+    pub repo: Repository,
+    pub access: Access,
+    pub milestones: Vec<Milestone>,
+    pub state_filter: String,
+    pub error: Option<String>,
     pub clone_http: String,
     pub clone_ssh: String,
 }

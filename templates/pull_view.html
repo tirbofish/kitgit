@@ -9,6 +9,19 @@
     #{{ pull.number }} {{ pull.title }}
   </h1>
   <p class="kg-meta">{{ pull.source_branch }} → {{ pull.target_branch }}</p>
+  <aside class="kg-issue-sidebar" style="margin:1rem 0">
+    <div class="kg-sidebar-block">
+      <h2 class="kg-kicker">labels</h2>
+      {% if labels.is_empty() %}<p class="kg-muted">None yet.</p>{% else %}<div class="kg-label-row">{% for l in labels %}<span class="kg-label-chip" style="background:{{ l.bg_color() }};color:{{ l.text_color() }}">{{ l.name }}</span>{% endfor %}</div>{% endif %}
+      {% if can_triage %}<form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/pulls/{{ pull.number }}/labels">{% for opt in label_options %}<label class="row"><input type="checkbox" name="label_id" value="{{ opt.label.id }}"{% if opt.selected %} checked{% endif %} /> <span class="kg-label-chip" style="background:{{ opt.label.bg_color() }};color:{{ opt.label.text_color() }}">{{ opt.label.name }}</span></label>{% endfor %}{% if !label_options.is_empty() %}<button class="kg-btn kg-btn--ghost" type="submit">save labels</button>{% endif %}</form>{% endif %}
+    </div>
+    <div class="kg-sidebar-block">
+      <h2 class="kg-kicker">milestone</h2>
+      {% if let Some(m) = milestone %}<p>{{ m.title }}</p>{% else %}<p class="kg-muted">No milestone</p>{% endif %}
+      {% if can_triage %}<form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/pulls/{{ pull.number }}/milestone"><label><select name="milestone_id"><option value="">none</option>{% for opt in milestone_options %}<option value="{{ opt.milestone.id }}"{% if opt.selected %} selected{% endif %}>{{ opt.milestone.title }}</option>{% endfor %}</select></label><button class="kg-btn kg-btn--ghost" type="submit">save milestone</button></form>{% endif %}
+    </div>
+  </aside>
+
   {% let pr_tab = tab %}
   {% let tab = "pulls" %}
   {% let archive_ref = repo.default_branch %}
