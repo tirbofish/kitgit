@@ -367,6 +367,7 @@ impl Handler for SshHandler {
         let actor_id = self
             .user_id
             .or_else(|| self.deploy_key.as_ref().and_then(|d| d.created_by));
+        let mut sender = None;
         if let Some(uid) = actor_id {
             if let Ok(Some(user)) = queries::get_user_by_id(&self.state.pool, uid).await {
                 let _ = queries::record_activity(
@@ -385,6 +386,7 @@ impl Handler for SshHandler {
                     1,
                 )
                 .await;
+                sender = Some(user);
             }
         }
         if let Ok(g) = crate::git::open_bare(&self.state.config.repos_dir(), &owner, &name) {
@@ -393,6 +395,18 @@ impl Handler for SshHandler {
                 let _ = queries::set_language_stats(&self.state.pool, repo.id, stats).await;
             }
         }
+        crate::webhooks::spawn_dispatch(
+            self.state.pool.clone(),
+            crate::webhooks::EVENT_PUSH,
+            "push".into(),
+            repo.clone(),
+            owner,
+            sender,
+            serde_json::json!({
+                "ref": format!("refs/heads/{}", repo.default_branch),
+                "default_branch": repo.default_branch,
+            }),
+        );
         Ok(())
     }
 }
