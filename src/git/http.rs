@@ -166,6 +166,18 @@ async fn post_push_hooks(
         .bind(repo.id)
         .execute(&state.pool)
         .await;
+    crate::webhooks::spawn_dispatch(
+        state.pool.clone(),
+        crate::webhooks::EVENT_PUSH,
+        "push".into(),
+        repo.clone(),
+        owner.to_string(),
+        Some(user.clone()),
+        serde_json::json!({
+            "ref": format!("refs/heads/{}", repo.default_branch),
+            "default_branch": repo.default_branch,
+        }),
+    );
     Ok(())
 }
 

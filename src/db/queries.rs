@@ -2484,3 +2484,171 @@ pub async fn list_audit_log_for_user(
     .fetch_all(pool)
     .await?)
 }
+
+// ── webhooks ─────────────────────────────────────────────────────────────────
+
+pub async fn list_webhooks(pool: &PgPool, repo_id: Uuid) -> Result<Vec<Webhook>> {
+    Ok(sqlx::query_as::<_, Webhook>(
+        "SELECT * FROM webhooks WHERE repo_id = $1 ORDER BY created_at DESC",
+    )
+    .bind(repo_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn list_active_webhooks_for_event(
+    pool: &PgPool,
+    repo_id: Uuid,
+    event: &str,
+) -> Result<Vec<Webhook>> {
+    Ok(sqlx::query_as::<_, Webhook>(
+        r#"
+        SELECT * FROM webhooks
+        WHERE repo_id = $1 AND active = TRUE AND $2 = ANY(events)
+        ORDER BY created_at
+        "#,
+    )
+    .bind(repo_id)
+    .bind(event)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn get_webhook(pool: &PgPool, id: Uuid, repo_id: Uuid) -> Result<Option<Webhook>> {
+    Ok(sqlx::query_as::<_, Webhook>(
+        "SELECT * FROM webhooks WHERE id = $1 AND repo_id = $2",
+    )
+    .bind(id)
+    .bind(repo_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
+pub async fn create_webhook(
+    pool: &PgPool,
+    repo_id: Uuid,
+    url: &str,
+    secret: &str,
+    events: &[String],
+) -> Result<Webhook> {
+    Ok(sqlx::query_as::<_, Webhook>(
+        r#"
+        INSERT INTO webhooks (repo_id, url, secret, events)
+        VALUES ($1, $2, $3, $4)
+        RETURNING *
+        "#,
+    )
+    .bind(repo_id)
+    .bind(url)
+    .bind(secret)
+    .bind(events)
+    .fetch_one(pool)
+    .await?)
+}
+
+pub async fn set_webhook_active(
+    pool: &PgPool,
+    id: Uuid,
+    repo_id: Uuid,
+    active: bool,
+) -> Result<()> {
+    sqlx::query("UPDATE webhooks SET active = $3 WHERE id = $1 AND repo_id = $2")
+        .bind(id)
+        .bind(repo_id)
+        .bind(active)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn delete_webhook(pool: &PgPool, id: Uuid, repo_id: Uuid) -> Result<()> {
+    sqlx::query("DELETE FROM webhooks WHERE id = $1 AND repo_id = $2")
+        .bind(id)
+        .bind(repo_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn record_webhook_delivery(
+    pool: &PgPool,
+    webhook_id: Uuid,
+    event: &str,
+    action: &str,
+    success: bool,
+    status_code: Option<i32>,
+    error: Option<&str>,
+    duration_ms: i32,
+) -> Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO webhook_deliveries
+            (webhook_id, event, action, success, status_code, error, duration_ms)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        "#,
+    )
+    .bind(webhook_id)
+    .bind(event)
+    .bind(action)
+    .bind(success)
+    .bind(status_code)
+    .bind(error)
+    .bind(duration_ms)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn list_recent_webhook_deliveries(
+    pool: &PgPool,
+    repo_id: Uuid,
+    limit: i64,
+) -> Result<Vec<(WebhookDelivery, String)>> {
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        id: i64,
+        webhook_id: Uuid,
+        event: String,
+        action: String,
+        success: bool,
+        status_code: Option<i32>,
+        error: Option<String>,
+        duration_ms: Option<i32>,
+        created_at: DateTime<Utc>,
+        webhook_url: String,
+    }
+    let rows = sqlx::query_as::<_, Row>(
+        r#"
+        SELECT d.id, d.webhook_id, d.event, d.action, d.success, d.status_code,
+               d.error, d.duration_ms, d.created_at, w.url AS webhook_url
+        FROM webhook_deliveries d
+        JOIN webhooks w ON w.id = d.webhook_id
+        WHERE w.repo_id = $1
+        ORDER BY d.created_at DESC
+        LIMIT $2
+        "#,
+    )
+    .bind(repo_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            (
+                WebhookDelivery {
+                    id: r.id,
+                    webhook_id: r.webhook_id,
+                    event: r.event,
+                    action: r.action,
+                    success: r.success,
+                    status_code: r.status_code,
+                    error: r.error,
+                    duration_ms: r.duration_ms,
+                    created_at: r.created_at,
+                },
+                r.webhook_url,
+            )
+        })
+        .collect())
+}
