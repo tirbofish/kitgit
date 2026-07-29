@@ -1,7 +1,7 @@
 use crate::og::SocialMeta;
 use crate::db::models::{
-    Access, BranchRule, CommitDay, GpgKey, Issue, PullRequest, Release, RepoMirror, Repository,
-    SshKey, User, UserEmail,
+    Access, BranchRule, CommitDay, GpgKey, Issue, Notification, PullRequest, Release, RepoMirror,
+    Repository, SshKey, User, UserEmail,
 };
 use crate::db::DeployKey;
 use askama::Template;
@@ -613,4 +613,12 @@ pub struct AdminStatsView {
     pub recent_signups: i64,
     pub active_invites: i64,
     pub disk_label: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "notifications.html")]
+pub struct NotificationsTemplate {
+    pub viewer: Option<User>,
+    pub notifications: Vec<Notification>,
+    pub unread_count: i64,
 }

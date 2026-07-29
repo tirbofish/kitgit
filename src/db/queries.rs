@@ -2652,3 +2652,173 @@ pub async fn list_recent_webhook_deliveries(
         })
         .collect())
 }
+
+// ── notifications ────────────────────────────────────────────────────────────
+
+pub async fn create_notification(
+    pool: &PgPool,
+    user_id: Uuid,
+    kind: &str,
+    title: &str,
+    body: &str,
+    href: &str,
+    repo_id: Option<Uuid>,
+) -> Result<Notification> {
+    Ok(sqlx::query_as::<_, Notification>(
+        r#"
+        INSERT INTO notifications (user_id, kind, title, body, href, repo_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+        "#,
+    )
+    .bind(user_id)
+    .bind(kind)
+    .bind(title)
+    .bind(body)
+    .bind(href)
+    .bind(repo_id)
+    .fetch_one(pool)
+    .await?)
+}
+
+/// Fan out the same notification to many users, skipping `exclude_user_id`.
+pub async fn notify_users(
+    pool: &PgPool,
+    user_ids: &[Uuid],
+    exclude_user_id: Uuid,
+    kind: &str,
+    title: &str,
+    body: &str,
+    href: &str,
+    repo_id: Option<Uuid>,
+) -> Result<u64> {
+    let mut created = 0u64;
+    for &uid in user_ids {
+        if uid == exclude_user_id {
+            continue;
+        }
+        create_notification(pool, uid, kind, title, body, href, repo_id).await?;
+        created += 1;
+    }
+    Ok(created)
+}
+
+pub async fn list_repo_watcher_ids(pool: &PgPool, repo_id: Uuid) -> Result<Vec<Uuid>> {
+    let rows: Vec<(Uuid,)> =
+        sqlx::query_as("SELECT user_id FROM repo_watches WHERE repo_id = $1")
+            .bind(repo_id)
+            .fetch_all(pool)
+            .await?;
+    Ok(rows.into_iter().map(|r| r.0).collect())
+}
+
+pub async fn notify_repo_watchers(
+    pool: &PgPool,
+    repo_id: Uuid,
+    exclude_user_id: Uuid,
+    kind: &str,
+    title: &str,
+    body: &str,
+    href: &str,
+) -> Result<u64> {
+    let watchers = list_repo_watcher_ids(pool, repo_id).await?;
+    notify_users(
+        pool,
+        &watchers,
+        exclude_user_id,
+        kind,
+        title,
+        body,
+        href,
+        Some(repo_id),
+    )
+    .await
+}
+
+/// Issue author plus prior comment authors.
+pub async fn list_issue_participant_ids(pool: &PgPool, issue_id: Uuid) -> Result<Vec<Uuid>> {
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        r#"
+        SELECT author_id FROM issues WHERE id = $1
+        UNION
+        SELECT DISTINCT author_id FROM comments WHERE issue_id = $1
+        "#,
+    )
+    .bind(issue_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|r| r.0).collect())
+}
+
+/// Pull author plus prior comment authors.
+pub async fn list_pull_participant_ids(pool: &PgPool, pull_id: Uuid) -> Result<Vec<Uuid>> {
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        r#"
+        SELECT author_id FROM pull_requests WHERE id = $1
+        UNION
+        SELECT DISTINCT author_id FROM comments WHERE pull_id = $1
+        "#,
+    )
+    .bind(pull_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|r| r.0).collect())
+}
+
+pub async fn list_notifications(
+    pool: &PgPool,
+    user_id: Uuid,
+    limit: i64,
+) -> Result<Vec<Notification>> {
+    Ok(sqlx::query_as::<_, Notification>(
+        r#"
+        SELECT * FROM notifications
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2
+        "#,
+    )
+    .bind(user_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn unread_notification_count(pool: &PgPool, user_id: Uuid) -> Result<i64> {
+    let (n,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*)::bigint FROM notifications WHERE user_id = $1 AND read_at IS NULL",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(n)
+}
+
+pub async fn mark_notification_read(
+    pool: &PgPool,
+    id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<Notification>> {
+    Ok(sqlx::query_as::<_, Notification>(
+        r#"
+        UPDATE notifications
+        SET read_at = COALESCE(read_at, now())
+        WHERE id = $1 AND user_id = $2
+        RETURNING *
+        "#,
+    )
+    .bind(id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
+pub async fn mark_all_notifications_read(pool: &PgPool, user_id: Uuid) -> Result<u64> {
+    let res = sqlx::query(
+        "UPDATE notifications SET read_at = now() WHERE user_id = $1 AND read_at IS NULL",
+    )
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(res.rows_affected())
+}

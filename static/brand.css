@@ -1607,3 +1607,41 @@ a:hover {
     animation: none !important;
   }
 }
+
+.kg-notif-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.35em;
+  margin-left: 0.25em;
+  border-radius: 999px;
+  background: var(--kg-invert-bg);
+  color: var(--kg-invert-fg);
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.kg-notif-list li {
+  align-items: flex-start;
+}
+
+.kg-notif-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.kg-notif-actions {
+  flex-shrink: 0;
+}
+
+.kg-notif--unread {
+  border-left: 2px solid var(--kg-fg);
+  padding-left: 0.65rem;
+  margin-left: -0.65rem;
+}
