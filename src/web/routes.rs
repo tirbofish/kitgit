@@ -2441,6 +2441,110 @@ pub async fn repo_blob(
     })
 }
 
+fn blame_time_display(secs: i64) -> String {
+    chrono::DateTime::from_timestamp(secs, 0)
+        .map(|dt| dt.format("%Y-%m-%d").to_string())
+        .unwrap_or_default()
+}
+
+pub async fn repo_blame(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo, rest)): Path<(String, String, String)>,
+) -> AppResult<impl IntoResponse> {
+    let (repository, owner_user, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let grepo = git::open_bare(&state.config.repos_dir(), &owner, &repo)
+        .map_err(|_| AppError::not_found())?;
+    let (branch, path) = split_ref_path(&grepo, &rest);
+    if path.is_empty() {
+        return Err(AppError::bad("missing file path"));
+    }
+    let binary = match git::read_blob(&grepo, &branch, &path) {
+        Ok((_, binary)) => binary,
+        Err(_) => return Err(AppError::not_found()),
+    };
+    let lines = if binary {
+        Vec::new()
+    } else {
+        git::blame_file(&grepo, &branch, &path)
+            .map_err(|e| AppError::not_found().with_message(e.to_string()))?
+            .into_iter()
+            .map(|l| BlameLineView {
+                line_no: l.line_no,
+                content: l.content,
+                commit_id: l.commit_id,
+                short_id: l.short_id,
+                author: l.author,
+                time_display: blame_time_display(l.time),
+                summary: l.summary,
+                hunk_start: l.hunk_start,
+            })
+            .collect()
+    };
+    let branches = git::list_branches(&grepo).unwrap_or_default();
+    let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
+    Ok(RepoBlameTemplate {
+        viewer,
+        owner: owner_user,
+        repo: repository,
+        access,
+        branches,
+        branch,
+        path: path.clone(),
+        breadcrumbs: breadcrumbs(&path),
+        lines,
+        binary,
+        clone_http,
+        clone_ssh,
+    })
+}
+
+pub async fn repo_history(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo, rest)): Path<(String, String, String)>,
+) -> AppResult<impl IntoResponse> {
+    let (repository, owner_user, viewer, access) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let grepo = git::open_bare(&state.config.repos_dir(), &owner, &repo)
+        .map_err(|_| AppError::not_found())?;
+    let (branch, path) = split_ref_path(&grepo, &rest);
+    if path.is_empty() {
+        return Err(AppError::bad("missing file path"));
+    }
+    let raw_commits = git::list_commits_for_path(&grepo, &branch, &path, 100).unwrap_or_default();
+    if raw_commits.is_empty()
+        && git::read_blob(&grepo, &branch, &path).is_err()
+        && !git::path_is_dir(&grepo, &branch, &path)
+    {
+        return Err(AppError::not_found());
+    }
+    let prepared: Vec<_> = raw_commits
+        .into_iter()
+        .map(|c| {
+            let extracted = git::extract_commit_signature(&grepo, &c.id);
+            (c, extracted)
+        })
+        .collect();
+    let commits = commit_views(&state, prepared).await;
+    let branches = git::list_branches(&grepo).unwrap_or_default();
+    let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
+    Ok(RepoHistoryTemplate {
+        viewer,
+        owner: owner_user,
+        repo: repository,
+        access,
+        branches,
+        branch,
+        path: path.clone(),
+        breadcrumbs: breadcrumbs(&path),
+        commits,
+        clone_http,
+        clone_ssh,
+    })
+}
+
 #[derive(Deserialize)]
 pub struct BranchQuery {
     pub branch: Option<String>,

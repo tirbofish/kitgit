@@ -180,6 +180,8 @@ pub fn app_router(state: AppState) -> Router {
         .route("/{owner}/{repo}/og.png", get(routes::repo_og_image))
         .route("/{owner}/{repo}/tree/{*rest}", get(routes::repo_tree))
         .route("/{owner}/{repo}/blob/{*rest}", get(routes::repo_blob))
+        .route("/{owner}/{repo}/blame/{*rest}", get(routes::repo_blame))
+        .route("/{owner}/{repo}/history/{*rest}", get(routes::repo_history))
         .route("/{owner}/{repo}/raw/{*rest}", get(routes_extra::repo_raw))
         .route("/{owner}/{repo}/star", post(routes_extra::repo_star))
         .route("/{owner}/{repo}/watch", post(routes_extra::repo_watch))

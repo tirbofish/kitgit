@@ -33,6 +33,8 @@
   <div class="kg-blobbar">
     <span class="kg-meta">{{ path }}</span>
     <div class="kg-blobbar__actions">
+      <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/blame/{{ branch }}/{{ path }}">Blame</a>
+      <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/history/{{ branch }}/{{ path }}">History</a>
       <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/raw/{{ branch }}/{{ path }}">
         <span class="kg-icon" style="--icon:url('/static/icons/download.svg')"></span>
         Download raw
