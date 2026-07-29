@@ -56,6 +56,7 @@ pub fn app_router(state: AppState) -> Router {
         .route("/", get(routes::home))
         .route("/og.png", get(routes::site_og_image))
         .route("/explore", get(routes::explore))
+        .route("/search", get(routes::explore))
         .route(
             "/auth/login",
             get(routes::auth_login_page).post(routes::auth_login_submit),

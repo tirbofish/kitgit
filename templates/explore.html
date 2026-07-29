@@ -9,34 +9,143 @@
 {% block content %}
 <section class="kg-section">
   <span class="kg-kicker">explore</span>
-  <h1 class="kg-display">public repositories</h1>
+  <h1 class="kg-display">search</h1>
   <form class="kg-explore-search" method="get" action="/explore" role="search">
     <label class="kg-sr-only" for="q">Search</label>
-    <input id="q" type="search" name="q" value="{{ query }}" placeholder="Search name, description, owner…" />
+    <input id="q" type="search" name="q" value="{{ query }}" placeholder="Search repos, users, issues, pullsΓÇª" />
+    <input type="hidden" name="type" value="{{ search_type }}" />
     <button class="kg-btn" type="submit">search</button>
   </form>
 
-  {% if repos.is_empty() %}
+  <div class="kg-actions kg-search-filters" role="navigation" aria-label="Result type">
+    <a class="kg-btn kg-btn--ghost{% if search_type == "all" %} kg-search-filters__active{% endif %}" href="/explore?q={{ query }}&amp;type=all"{% if search_type == "all" %} aria-current="page"{% endif %}>all</a>
+    <a class="kg-btn kg-btn--ghost{% if search_type == "repos" %} kg-search-filters__active{% endif %}" href="/explore?q={{ query }}&amp;type=repos"{% if search_type == "repos" %} aria-current="page"{% endif %}>repos</a>
+    <a class="kg-btn kg-btn--ghost{% if search_type == "users" %} kg-search-filters__active{% endif %}" href="/explore?q={{ query }}&amp;type=users"{% if search_type == "users" %} aria-current="page"{% endif %}>users</a>
+    <a class="kg-btn kg-btn--ghost{% if search_type == "issues" %} kg-search-filters__active{% endif %}" href="/explore?q={{ query }}&amp;type=issues"{% if search_type == "issues" %} aria-current="page"{% endif %}>issues</a>
+    <a class="kg-btn kg-btn--ghost{% if search_type == "pulls" %} kg-search-filters__active{% endif %}" href="/explore?q={{ query }}&amp;type=pulls"{% if search_type == "pulls" %} aria-current="page"{% endif %}>pulls</a>
+  </div>
+
+  {% let show_repos = search_type == "all" || search_type == "repos" %}
+  {% let show_users = search_type == "all" || search_type == "users" %}
+  {% let show_issues = search_type == "all" || search_type == "issues" %}
+  {% let show_pulls = search_type == "all" || search_type == "pulls" %}
+  {% let empty_all = repos.is_empty() && users.is_empty() && issues.is_empty() && pulls.is_empty() %}
+
+  {% if empty_all %}
     <p class="kg-muted" style="margin-top:1.5rem">
-      {% if !query.is_empty() %}No public repositories match “{{ query }}”.{% else %}No public repositories yet.{% endif %}
+      {% if !query.is_empty() %}
+        No results match ΓÇ£{{ query }}ΓÇ¥.
+      {% else if search_type == "users" || search_type == "issues" || search_type == "pulls" %}
+        Enter a search to find {{ search_type }}.
+      {% else %}
+        No public repositories yet.
+      {% endif %}
     </p>
   {% else %}
-    <ul class="kg-list" style="margin-top:1.5rem">
-      {% for item in repos %}
-      <li>
-        <div>
-          <a href="/{{ item.owner }}/{{ item.repo.name }}">
-            <span class="kg-icon" style="--icon:url('/static/icons/code.svg')"></span>
-            {{ item.owner }}/{{ item.repo.name }}
-          </a>
-          {% if !item.repo.description.is_empty() %}
-            <p class="kg-meta" style="margin:0.25rem 0 0">{{ item.repo.description }}</p>
-          {% endif %}
-        </div>
-        <span class="kg-meta">{{ item.repo.updated_at }}</span>
-      </li>
-      {% endfor %}
-    </ul>
+
+    {% if show_repos && (!repos.is_empty() || search_type == "repos") %}
+    <div class="kg-search-block">
+      <span class="kg-kicker">repositories</span>
+      {% if repos.is_empty() %}
+        <p class="kg-muted">No repositories match.</p>
+      {% else %}
+        <ul class="kg-list">
+          {% for item in repos %}
+          <li>
+            <div>
+              <a href="/{{ item.owner }}/{{ item.repo.name }}">
+                <span class="kg-icon" style="--icon:url('/static/icons/code.svg')"></span>
+                {{ item.owner }}/{{ item.repo.name }}
+              </a>
+              {% if item.repo.visibility == "private" %}<span class="kg-badge">private</span>{% endif %}
+              {% if !item.repo.description.is_empty() %}
+                <p class="kg-meta" style="margin:0.25rem 0 0">{{ item.repo.description }}</p>
+              {% endif %}
+            </div>
+            <span class="kg-meta">{{ item.repo.updated_at }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if show_users && (!users.is_empty() || (search_type == "users" && !query.is_empty())) %}
+    <div class="kg-search-block">
+      <span class="kg-kicker">users</span>
+      {% if users.is_empty() %}
+        <p class="kg-muted">No users match.</p>
+      {% else %}
+        <ul class="kg-list">
+          {% for u in users %}
+          <li>
+            <div class="kg-search-user">
+              <img class="kg-avatar kg-avatar--sm" src="/avatars/{{ u.id }}?v={{ u.updated_at.timestamp() }}" alt="" />
+              <div>
+                <a href="/{{ u.username }}">
+                  <span class="kg-icon" style="--icon:url('/static/icons/user.svg')"></span>
+                  {% if !u.display_name.is_empty() %}{{ u.display_name }}{% else %}{{ u.username }}{% endif %}
+                </a>
+                <p class="kg-meta" style="margin:0.15rem 0 0">@{{ u.username }}{% if !u.bio.is_empty() %} ┬╖ {{ u.bio }}{% endif %}</p>
+              </div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if show_issues && (!issues.is_empty() || (search_type == "issues" && !query.is_empty())) %}
+    <div class="kg-search-block">
+      <span class="kg-kicker">issues</span>
+      {% if issues.is_empty() %}
+        <p class="kg-muted">No issues match.</p>
+      {% else %}
+        <ul class="kg-list">
+          {% for item in issues %}
+          <li>
+            <div>
+              <span class="kg-badge {% if item.state == "open" %}kg-badge--open{% else %}kg-badge--closed{% endif %}">{{ item.state }}</span>
+              {% if item.visibility == "private" %}<span class="kg-badge">private</span>{% endif %}
+              <a href="/{{ item.owner }}/{{ item.repo_name }}/issues/{{ item.number }}">
+                <span class="kg-icon" style="--icon:url('/static/icons/circle.svg')"></span>
+                {{ item.owner }}/{{ item.repo_name }}#{{ item.number }} {{ item.title }}
+              </a>
+            </div>
+            <span class="kg-meta">{{ item.updated_at }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if show_pulls && (!pulls.is_empty() || (search_type == "pulls" && !query.is_empty())) %}
+    <div class="kg-search-block">
+      <span class="kg-kicker">pulls</span>
+      {% if pulls.is_empty() %}
+        <p class="kg-muted">No pulls match.</p>
+      {% else %}
+        <ul class="kg-list">
+          {% for item in pulls %}
+          <li>
+            <div>
+              <span class="kg-badge {% if item.state == "open" %}kg-badge--open{% else %}kg-badge--closed{% endif %}">{{ item.state }}</span>
+              {% if item.visibility == "private" %}<span class="kg-badge">private</span>{% endif %}
+              <a href="/{{ item.owner }}/{{ item.repo_name }}/pulls/{{ item.number }}">
+                <span class="kg-icon" style="--icon:url('/static/icons/git-pull-request.svg')"></span>
+                {{ item.owner }}/{{ item.repo_name }}#{{ item.number }} {{ item.title }}
+              </a>
+            </div>
+            <span class="kg-meta">{{ item.updated_at }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+    {% endif %}
+
   {% endif %}
 </section>
 {% endblock %}

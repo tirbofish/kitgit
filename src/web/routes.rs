@@ -963,6 +963,19 @@ pub async fn home(
 #[derive(Deserialize)]
 pub struct ExploreQuery {
     pub q: Option<String>,
+    /// `all` | `repos` | `users` | `issues` | `pulls`
+    #[serde(rename = "type")]
+    pub search_type: Option<String>,
+}
+
+fn normalize_search_type(raw: Option<&str>) -> &'static str {
+    match raw.map(|s| s.trim().to_ascii_lowercase()).as_deref() {
+        Some("repos") | Some("repositories") => "repos",
+        Some("users") | Some("people") => "users",
+        Some("issues") => "issues",
+        Some("pulls") | Some("prs") | Some("pull") => "pulls",
+        _ => "all",
+    }
 }
 
 pub async fn explore(
@@ -971,37 +984,94 @@ pub async fn explore(
     Query(q): Query<ExploreQuery>,
 ) -> AppResult<impl IntoResponse> {
     let viewer = current_user(&state.auth, &headers).await?;
+    let viewer_id = viewer.as_ref().map(|u| u.id);
     let query = q.q.unwrap_or_default();
-    let rows = queries::list_public_repos(
-        &state.pool,
-        if query.trim().is_empty() {
-            None
+    let search_type = normalize_search_type(q.search_type.as_deref()).to_string();
+    let qtrim = query.trim();
+    let has_query = !qtrim.is_empty();
+
+    let want_repos = search_type == "all" || search_type == "repos";
+    let want_users = has_query && (search_type == "all" || search_type == "users");
+    let want_issues = has_query && (search_type == "all" || search_type == "issues");
+    let want_pulls = has_query && (search_type == "all" || search_type == "pulls");
+
+    let per = if search_type == "all" { 15 } else { 50 };
+
+    let repos = if want_repos {
+        let rows = if has_query {
+            queries::search_repos(&state.pool, qtrim, viewer_id, per).await?
         } else {
-            Some(query.as_str())
-        },
-        50,
-    )
-    .await?;
-    let repos = rows
-        .into_iter()
-        .map(|(repo, owner)| ExploreRepo { owner, repo })
-        .collect();
-    let social = if query.trim().is_empty() {
+            queries::list_public_repos(&state.pool, None, per).await?
+        };
+        rows.into_iter()
+            .map(|(repo, owner)| ExploreRepo { owner, repo })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let users = if want_users {
+        queries::search_users_public(&state.pool, qtrim, per).await?
+    } else {
+        Vec::new()
+    };
+
+    let issues = if want_issues {
+        queries::search_issues(&state.pool, qtrim, viewer_id, per)
+            .await?
+            .into_iter()
+            .map(|h| ExploreIssueHit {
+                owner: h.owner,
+                repo_name: h.repo_name,
+                number: h.number,
+                title: h.title,
+                state: h.state,
+                visibility: h.visibility,
+                updated_at: h.updated_at,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let pulls = if want_pulls {
+        queries::search_pulls(&state.pool, qtrim, viewer_id, per)
+            .await?
+            .into_iter()
+            .map(|h| ExplorePullHit {
+                owner: h.owner,
+                repo_name: h.repo_name,
+                number: h.number,
+                title: h.title,
+                state: h.state,
+                visibility: h.visibility,
+                updated_at: h.updated_at,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let social = if !has_query {
         og::site_social_meta(
             &state.config.public_url,
             "/explore",
-            "explore repositories - kitgit",
-            "Browse public repositories on kitgit.",
+            "explore - kitgit",
+            "Browse and search repositories, users, issues, and pulls on kitgit.",
         )
     } else {
         let title = format!("search '{query}' - kitgit");
-        let desc = format!("Public repositories matching '{query}' on kitgit.");
+        let desc = format!("Search results for '{query}' on kitgit.");
         og::site_social_meta(&state.config.public_url, "/explore", &title, &desc)
     };
     Ok(ExploreTemplate {
         viewer,
-        repos,
         query,
+        search_type,
+        repos,
+        users,
+        issues,
+        pulls,
         social,
     })
 }
