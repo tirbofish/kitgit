@@ -2900,6 +2900,7 @@ async fn commit_view(
     c: git::CommitInfo,
     extracted: Option<(String, Vec<u8>)>,
 ) -> CommitView {
+    let signed = extracted.is_some();
     let verification = match extracted {
         Some((sig, payload)) => {
             git::verify_commit_signature(
@@ -2934,6 +2935,7 @@ async fn commit_view(
         author: c.author,
         email: c.email,
         time: c.time,
+        signed,
         verified,
         verify_kind,
         verify_fingerprint,
