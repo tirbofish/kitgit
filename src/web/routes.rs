@@ -20,7 +20,7 @@ use serde::Deserialize;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-// ├óΓÇ¥Γé¼├óΓÇ¥Γé¼ helpers ├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼
+// ── helpers ──────────────────────────────────────────────────────────────────
 
 pub type AppResult<T> = Result<T, AppError>;
 
@@ -570,16 +570,14 @@ fn append_diff_line(out: &mut String, line: &str) {
     out.push('\n');
 }
 
-fn render_diff_html(diff: &str) -> String {
+fn render_diff_html(diff: &str, full: bool) -> (String, bool, usize) {
     let lines: Vec<&str> = diff.lines().collect();
-    let (html, truncated, total) = render_diff_lines(&lines, Some(DIFF_RENDER_MAX_LINES));
-    if truncated {
-        format!(
-            "{html}<p class=\"kg-diff__truncated\">Large diffs are not rendered by default. Showing the first {DIFF_RENDER_MAX_LINES} of {total} lines.</p>"
-        )
+    let max = if full {
+        None
     } else {
-        html
-    }
+        Some(DIFF_RENDER_MAX_LINES)
+    };
+    render_diff_lines(&lines, max)
 }
 
 /// Render unified-diff lines. When `max_lines` is set, stop after that many
@@ -625,7 +623,7 @@ fn anchor_for_path(path: &str, idx: usize) -> String {
     format!("diff-{idx}-{safe}")
 }
 
-fn parse_diff_files(diff: &str) -> Vec<DiffFileView> {
+fn parse_diff_files(diff: &str, full: bool) -> Vec<DiffFileView> {
     let mut files = Vec::new();
     if diff.trim().is_empty() {
         return files;
@@ -635,23 +633,23 @@ fn parse_diff_files(diff: &str) -> Vec<DiffFileView> {
     for line in diff.lines() {
         if line.starts_with("diff --git ") {
             if let Some((path, lines)) = current.take() {
-                files.push(build_diff_file(files.len(), path, &lines));
+                files.push(build_diff_file(files.len(), path, &lines, full));
             }
             current = Some((diff_file_path(line), vec![line.to_string()]));
         } else if let Some((_, ref mut lines)) = current {
             lines.push(line.to_string());
         } else {
-            // Preamble without a file header ├óΓé¼ΓÇ¥ treat as one blob.
+            // Preamble without a file header — treat as one blob.
             current = Some(("diff".into(), vec![line.to_string()]));
         }
     }
     if let Some((path, lines)) = current {
-        files.push(build_diff_file(files.len(), path, &lines));
+        files.push(build_diff_file(files.len(), path, &lines, full));
     }
     files
 }
 
-fn build_diff_file(idx: usize, path: String, lines: &[String]) -> DiffFileView {
+fn build_diff_file(idx: usize, path: String, lines: &[String], full: bool) -> DiffFileView {
     let mut additions = 0u32;
     let mut deletions = 0u32;
     let mut binary = false;
@@ -666,6 +664,11 @@ fn build_diff_file(idx: usize, path: String, lines: &[String]) -> DiffFileView {
         }
     }
     let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+    let max = if full {
+        None
+    } else {
+        Some(DIFF_RENDER_MAX_LINES)
+    };
     let (html, truncated, total_lines) = if binary {
         (
             String::from(
@@ -675,7 +678,7 @@ fn build_diff_file(idx: usize, path: String, lines: &[String]) -> DiffFileView {
             refs.len(),
         )
     } else {
-        render_diff_lines(&refs, Some(DIFF_RENDER_MAX_LINES))
+        render_diff_lines(&refs, max)
     };
     DiffFileView {
         anchor: anchor_for_path(&path, idx),
@@ -801,6 +804,33 @@ fn breadcrumbs(path: &str) -> Vec<(String, String)> {
         out.push((part.to_string(), acc.clone()));
     }
     out
+}
+
+fn query_full(v: Option<&str>) -> bool {
+    matches!(v, Some("1") | Some("true") | Some("yes") | Some("on"))
+}
+
+async fn review_views(
+    pool: &sqlx::PgPool,
+    reviews: Vec<crate::db::models::PullReview>,
+) -> AppResult<Vec<PullReviewView>> {
+    let mut out = Vec::with_capacity(reviews.len());
+    for r in reviews {
+        let reviewer = queries::get_user_by_id(pool, r.reviewer_id)
+            .await?
+            .ok_or_else(AppError::not_found)?;
+        let avatar_url = avatar_url_for(&reviewer);
+        out.push(PullReviewView {
+            id: r.id,
+            reviewer,
+            avatar_url,
+            state: r.state,
+            body: r.body.clone(),
+            body_html: render_markdown(&r.body),
+            created_at: r.created_at,
+        });
+    }
+    Ok(out)
 }
 
 async fn comment_views(
@@ -2226,16 +2256,11 @@ pub async fn repo_home(
         branches = git::list_branches(g).unwrap_or_default();
         if git::resolve_ref(g, &current_branch).is_ok() {
             empty = false;
-            entries = git::list_tree(g, &current_branch, "")
-                .unwrap_or_default()
-                .into_iter()
-                .map(|e| TreeEntryView {
-                    name: e.name,
-                    path: e.path,
-                    is_dir: e.is_dir,
-                    mode: e.mode,
-                })
-                .collect();
+            entries = tree_entry_views(
+                g,
+                &current_branch,
+                git::list_tree(g, &current_branch, "").unwrap_or_default(),
+            );
             if let Ok(Some((name, src))) = git::find_readme(g, &current_branch, "") {
                 readme_html = Some(readme_to_html(
                     &name,
@@ -2264,6 +2289,10 @@ pub async fn repo_home(
             latest_commit_view(&state, prepared).await
         }
         None => None,
+    };
+    let commit_count = match grepo.as_ref() {
+        Some(g) => git::count_commits(g, &current_branch).unwrap_or(0),
+        None => 0,
     };
     let languages = language_stat_views(languages);
 
@@ -2300,6 +2329,7 @@ pub async fn repo_home(
         languages,
         empty,
         latest_commit,
+        commit_count,
         forked_from,
         starred,
         watching,
@@ -2343,16 +2373,12 @@ pub async fn repo_tree(
     let grepo = git::open_bare(&state.config.repos_dir(), &owner, &repo)
         .map_err(|_| AppError::not_found())?;
     let (branch, path) = split_ref_path(&grepo, &rest);
-    let entries = git::list_tree(&grepo, &branch, &path)
-        .map_err(|e| AppError::not_found().with_message(e.to_string()))?
-        .into_iter()
-        .map(|e| TreeEntryView {
-            name: e.name,
-            path: e.path,
-            is_dir: e.is_dir,
-            mode: e.mode,
-        })
-        .collect();
+    let entries = tree_entry_views(
+        &grepo,
+        &branch,
+        git::list_tree(&grepo, &branch, &path)
+            .map_err(|e| AppError::not_found().with_message(e.to_string()))?,
+    );
     let readme_html = match git::find_readme(&grepo, &branch, &path) {
         Ok(Some((name, src))) => Some(readme_to_html(
             &name,
@@ -2368,6 +2394,7 @@ pub async fn repo_tree(
     let branches = git::list_branches(&grepo).unwrap_or_default();
     let prepared = prepare_latest_commit(&grepo, &branch);
     let latest_commit = latest_commit_view(&state, prepared).await;
+    let commit_count = git::count_commits(&grepo, &branch).unwrap_or(0);
     let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
     Ok(RepoTreeTemplate {
         viewer,
@@ -2381,6 +2408,7 @@ pub async fn repo_tree(
         entries,
         readme_html,
         latest_commit,
+        commit_count,
         clone_http,
         clone_ssh,
     })
@@ -2441,11 +2469,26 @@ pub async fn repo_blob(
     })
 }
 
-fn blame_time_display(secs: i64) -> String {
-    chrono::DateTime::from_timestamp(secs, 0)
-        .map(|dt| dt.format("%Y-%m-%d").to_string())
-        .unwrap_or_default()
+fn tree_entry_views(grepo: &git2::Repository, branch: &str, entries: Vec<git::TreeEntry>) -> Vec<TreeEntryView> {
+    entries
+        .into_iter()
+        .map(|e| {
+            let (commit_message, commit_time) = git::list_commits_for_path(grepo, branch, &e.path, 1)
+                .ok()
+                .and_then(|mut v| v.pop())
+                .map(|c| (c.message, format_unix_time(c.time)))
+                .unwrap_or_else(|| (String::new(), String::new()));
+            TreeEntryView {
+                name: e.name,
+                path: e.path,
+                is_dir: e.is_dir,
+                commit_message,
+                commit_time,
+            }
+        })
+        .collect()
 }
+
 
 pub async fn repo_blame(
     State(state): State<AppState>,
@@ -2476,7 +2519,7 @@ pub async fn repo_blame(
                 commit_id: l.commit_id,
                 short_id: l.short_id,
                 author: l.author,
-                time_display: blame_time_display(l.time),
+                time_display: format_unix_time(l.time),
                 summary: l.summary,
                 hunk_start: l.hunk_start,
             })
@@ -2587,10 +2630,16 @@ pub async fn repo_commits(
     })
 }
 
+#[derive(Deserialize)]
+pub struct FullDiffQuery {
+    pub full: Option<String>,
+}
+
 pub async fn repo_commit(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((owner, repo, id)): Path<(String, String, String)>,
+    Query(q): Query<FullDiffQuery>,
 ) -> AppResult<impl IntoResponse> {
     let (repository, owner_user, viewer, access) =
         load_repo_context(&state, &owner, &repo, &headers).await?;
@@ -2599,7 +2648,8 @@ pub async fn repo_commit(
     let commit = git::get_commit(&grepo, &id).map_err(|_| AppError::not_found())?;
     let extracted = git::extract_commit_signature(&grepo, &commit.id);
     let diff = git::commit_diff(&grepo, &id).unwrap_or_default();
-    let diff_html = render_diff_html(&diff);
+    let show_full = query_full(q.full.as_deref());
+    let (diff_html, truncated, total_lines) = render_diff_html(&diff, show_full);
     let message_html = linkify_commit_message(
         &state.pool,
         repository.id,
@@ -2616,6 +2666,9 @@ pub async fn repo_commit(
         commit: commit_view(&state, commit, extracted).await,
         message_html,
         diff_html,
+        show_full,
+        truncated,
+        total_lines,
         clone_http: clone_urls(&state, &owner, &repo).0,
         clone_ssh: clone_urls(&state, &owner, &repo).1,
     })
@@ -2625,6 +2678,7 @@ pub async fn repo_diff(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((owner, repo, id)): Path<(String, String, String)>,
+    Query(q): Query<FullDiffQuery>,
 ) -> AppResult<impl IntoResponse> {
     let (repository, owner_user, viewer, access) =
         load_repo_context(&state, &owner, &repo, &headers).await?;
@@ -2633,7 +2687,8 @@ pub async fn repo_diff(
     let commit = git::get_commit(&grepo, &id).map_err(|_| AppError::not_found())?;
     let extracted = git::extract_commit_signature(&grepo, &commit.id);
     let diff = git::commit_diff(&grepo, &id).unwrap_or_default();
-    let diff_html = render_diff_html(&diff);
+    let show_full = query_full(q.full.as_deref());
+    let (diff_html, truncated, total_lines) = render_diff_html(&diff, show_full);
     let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
     Ok(RepoDiffTemplate {
         viewer,
@@ -2642,6 +2697,9 @@ pub async fn repo_diff(
         access,
         commit: commit_view(&state, commit, extracted).await,
         diff_html,
+        show_full,
+        truncated,
+        total_lines,
         clone_http,
         clone_ssh,
     })
@@ -2850,7 +2908,7 @@ pub async fn repo_branches(
             let updated = git::list_commits(&grepo, &name, 1)
                 .ok()
                 .and_then(|mut v| v.pop())
-                .map(|c| c.time.to_string())
+                .map(|c| format_unix_time(c.time))
                 .unwrap_or_default();
             BranchRow {
                 name,
@@ -2878,7 +2936,7 @@ pub async fn repo_branches(
             short_id: t.short_id,
             target: t.target,
             message: t.message,
-            updated: t.time.to_string(),
+            updated: format_unix_time(t.time),
         })
         .collect();
     let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
@@ -2933,7 +2991,11 @@ async fn commit_view(
         short_id: c.short_id,
         message: c.message,
         author: c.author,
-        email: c.email,
+        email: c.email.clone(),
+        author_username: queries::username_by_email(&state.pool, &c.email)
+            .await
+            .ok()
+            .flatten(),
         time: c.time,
         signed,
         verified,
@@ -3673,6 +3735,7 @@ pub async fn pull_create(
 #[derive(Deserialize)]
 pub struct PullTabQuery {
     pub tab: Option<String>,
+    pub full: Option<String>,
 }
 
 pub async fn pull_view(
@@ -3698,6 +3761,11 @@ pub async fn pull_view(
         viewer.as_ref().map(|u| u.id),
     )
     .await?;
+    let reviews = review_views(
+        &state.pool,
+        queries::list_reviews_for_pull(&state.pool, pull.id).await?,
+    )
+    .await?;
 
     let tab = match q.tab.as_deref() {
         Some("commits") => "commits",
@@ -3705,6 +3773,7 @@ pub async fn pull_view(
         _ => "conversation",
     }
     .to_string();
+    let show_full = query_full(q.full.as_deref());
 
     let mut commits = Vec::new();
     let mut diff_files = Vec::new();
@@ -3720,7 +3789,7 @@ pub async fn pull_view(
         commits = commit_views(&state, prepared).await;
         let diff =
             git::branch_diff(&g, &pull.source_branch, &pull.target_branch).unwrap_or_default();
-        diff_files = parse_diff_files(&diff);
+        diff_files = parse_diff_files(&diff, show_full);
     }
 
     let can_merge = access.can_write() && pull.state == "open";
@@ -3753,8 +3822,12 @@ pub async fn pull_view(
         .as_ref()
         .map(|u| access.can_write() || pull.author_id == u.id)
         .unwrap_or(false);
+    let is_author = viewer
+        .as_ref()
+        .map(|u| u.id == pull.author_id)
+        .unwrap_or(false);
 
-    let conversation_count = comments.len() + 1;
+    let conversation_count = comments.len() + reviews.len() + 1;
     let (clone_http, clone_ssh) = clone_urls(&state, &owner, &repo);
     Ok(PullViewTemplate {
         viewer,
@@ -3766,10 +3839,12 @@ pub async fn pull_view(
         pull,
         author,
         comments,
+        reviews,
         commits,
         conversation_count,
         diff_files,
         tab,
+        show_full,
         can_merge,
         merge_styles,
         labels,
@@ -3777,6 +3852,7 @@ pub async fn pull_view(
         milestone,
         milestone_options,
         can_triage,
+        is_author,
         clone_http,
         clone_ssh,
     })
@@ -3877,6 +3953,72 @@ pub async fn pull_comment(
         user.id,
         "pull.comment",
         &format!("{} commented on pull #{number}", user.username),
+        &notif_snippet(body, 160),
+        &href,
+        Some(repository.id),
+    )
+    .await?;
+    Ok(redirect_see_other(&href))
+}
+
+#[derive(Deserialize)]
+pub struct PullReviewForm {
+    pub state: String,
+    pub body: Option<String>,
+}
+
+pub async fn pull_review(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo, number)): Path<(String, String, i32)>,
+    Form(form): Form<PullReviewForm>,
+) -> AppResult<Response> {
+    let (repository, _o, viewer, _a) =
+        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let user = viewer.ok_or_else(AppError::unauthorized)?;
+    let pull = queries::get_pull(&state.pool, repository.id, number)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    if pull.state != "open" {
+        return Err(AppError::bad("pull request is not open"));
+    }
+    let state_name = match form.state.trim() {
+        "approved" => "approved",
+        "changes_requested" => "changes_requested",
+        "commented" => "commented",
+        _ => return Err(AppError::bad("invalid review state")),
+    };
+    if user.id == pull.author_id && state_name != "commented" {
+        return Err(AppError::bad(
+            "cannot approve or request changes on your own pull request",
+        ));
+    }
+    let body = form.body.as_deref().unwrap_or("").trim();
+    queries::create_review(&state.pool, pull.id, user.id, state_name, body).await?;
+    queries::record_activity(
+        &state.pool,
+        Some(user.id),
+        Some(repository.id),
+        "pull.review",
+        &format!("reviewed pull #{number} ({state_name})"),
+        serde_json::json!({ "number": number, "state": state_name }),
+    )
+    .await?;
+    let participants = queries::list_pull_participant_ids(&state.pool, pull.id).await?;
+    let href = format!("/{owner}/{repo}/pulls/{number}");
+    let summary = match state_name {
+        "approved" => format!("{} approved pull #{number}", user.username),
+        "changes_requested" => {
+            format!("{} requested changes on pull #{number}", user.username)
+        }
+        _ => format!("{} left a review on pull #{number}", user.username),
+    };
+    queries::notify_users(
+        &state.pool,
+        &participants,
+        user.id,
+        "pull.review",
+        &summary,
         &notif_snippet(body, 160),
         &href,
         Some(repository.id),

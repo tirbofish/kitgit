@@ -38,7 +38,7 @@
       commits
       <span class="kg-pr-tabs__count">{{ commits.len() }}</span>
     </a>
-    <a href="/{{ owner.username }}/{{ repo.name }}/pulls/{{ pull.number }}?tab=files"{% if pr_tab == "files" %} aria-current="page"{% endif %}>
+    <a href="/{{ owner.username }}/{{ repo.name }}/pulls/{{ pull.number }}?tab=files{% if show_full %}&amp;full=1{% endif %}"{% if pr_tab == "files" %} aria-current="page"{% endif %}>
       <span class="kg-icon" style="--icon:url('/static/icons/file.svg')"></span>
       files
       <span class="kg-pr-tabs__count">{{ diff_files.len() }}</span>
@@ -70,6 +70,51 @@
     {% include "partials/reactions.html" %}
   </article>
   {% endfor %}
+
+  {% for r in reviews %}
+  <article class="kg-comment kg-review">
+    <header>
+      <span>
+        <img class="kg-avatar kg-avatar--sm" src="{{ r.avatar_url }}" alt="" />
+        <a href="/{{ r.reviewer.username }}">{{ r.reviewer.username }}</a>
+        <span class="kg-badge {{ r.state_class() }}">{{ r.state_label() }}</span>
+      </span>
+      <span>{{ r.created_at }}</span>
+    </header>
+    {% if !r.body.is_empty() %}
+    <div class="kg-readme">{{ r.body_html|safe }}</div>
+    {% endif %}
+  </article>
+  {% endfor %}
+
+  {% if viewer.is_some() && pull.state == "open" %}
+    <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/pulls/{{ pull.number }}/review">
+      <fieldset class="kg-review-state">
+        <legend>review</legend>
+        {% if !is_author %}
+        <label class="row">
+          <input type="radio" name="state" value="approved" />
+          approve
+        </label>
+        <label class="row">
+          <input type="radio" name="state" value="changes_requested" />
+          request changes
+        </label>
+        {% endif %}
+        <label class="row">
+          <input type="radio" name="state" value="commented" checked />
+          comment
+        </label>
+      </fieldset>
+      <label>
+        review notes
+        <textarea name="body" rows="4" placeholder="Leave a review comment (optional)"></textarea>
+      </label>
+      <div class="kg-actions">
+        <button class="kg-btn" type="submit">submit review</button>
+      </div>
+    </form>
+  {% endif %}
 
   {% if viewer.is_some() %}
     <form class="kg-form" method="post" action="/{{ owner.username }}/{{ repo.name }}/pulls/{{ pull.number }}">
@@ -159,10 +204,11 @@
               </span>
             </header>
             {{ f.html|safe }}
-            {% if f.truncated %}
+            {% if f.truncated && !show_full %}
               <p class="kg-diff__truncated">
                 Large diffs are not rendered by default.
                 Showing the first 50 of {{ f.total_lines }} lines.
+                <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/pulls/{{ pull.number }}?tab=files&amp;full=1#{{ f.anchor }}">Show full diff</a>
               </p>
             {% endif %}
           </section>

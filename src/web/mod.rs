@@ -4,14 +4,72 @@ pub mod templates;
 
 use crate::git;
 use crate::state::AppState;
+use axum::body::{Body, to_bytes};
 use axum::extract::{DefaultBodyLimit, Request};
-use axum::http::{header, StatusCode};
+use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::{from_fn, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
+use std::time::{Duration, Instant};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::ServeDir;
+
+const RENDER_MS_MARKER: &[u8] = b"<!--kg-render-ms-->";
+
+fn format_render_duration(elapsed: Duration) -> String {
+    let ms = elapsed.as_secs_f64() * 1000.0;
+    if ms < 10.0 {
+        format!("{ms:.1}ms")
+    } else {
+        format!("{:.0}ms", ms.round())
+    }
+}
+
+fn inject_render_marker(html: &[u8], label: &str) -> Option<Vec<u8>> {
+    let pos = html
+        .windows(RENDER_MS_MARKER.len())
+        .position(|window| window == RENDER_MS_MARKER)?;
+    let mut out = Vec::with_capacity(html.len() - RENDER_MS_MARKER.len() + label.len());
+    out.extend_from_slice(&html[..pos]);
+    out.extend_from_slice(label.as_bytes());
+    out.extend_from_slice(&html[pos + RENDER_MS_MARKER.len()..]);
+    Some(out)
+}
+
+/// Measure HTML page handler time and fill the layout footer timing marker.
+async fn inject_render_timing(req: Request, next: Next) -> Response {
+    let start = Instant::now();
+    let res = next.run(req).await;
+    let elapsed = start.elapsed();
+
+    let is_html = res
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|ct| ct.starts_with("text/html"));
+    if !is_html {
+        return res;
+    }
+
+    let (mut parts, body) = res.into_parts();
+    let Ok(bytes) = to_bytes(body, 16 * 1024 * 1024).await else {
+        return Response::from_parts(parts, Body::empty());
+    };
+
+    let label = format_render_duration(elapsed);
+    let body = match inject_render_marker(&bytes, &label) {
+        Some(updated) => {
+            parts.headers.remove(header::CONTENT_LENGTH);
+            if let Ok(len) = HeaderValue::from_str(&updated.len().to_string()) {
+                parts.headers.insert(header::CONTENT_LENGTH, len);
+            }
+            Body::from(updated)
+        }
+        None => Body::from(bytes),
+    };
+    Response::from_parts(parts, body)
+}
 
 /// Rewrite `/owner/repo.git` ├óΓÇáΓÇÖ `/owner/repo` and drop a trailing slash so
 /// browser pages and git smart-HTTP both work with classic forge URLs.
@@ -138,6 +196,10 @@ pub fn app_router(state: AppState) -> Router {
             post(routes_extra::account_delete_email),
         )
         .route(
+            "/settings/account/emails/{id}/primary",
+            post(routes_extra::account_set_primary_email),
+        )
+        .route(
             "/settings/account/sessions/{id}/revoke",
             post(routes_extra::account_revoke_session),
         )
@@ -197,20 +259,20 @@ pub fn app_router(state: AppState) -> Router {
         .route("/{owner}/{repo}/upload", post(routes::repo_upload))
         .route("/{owner}/{repo}/branches", get(routes::repo_branches))
         .route(
-            "/{owner}/{repo}/branches/{branch}/rename",
+            "/{owner}/{repo}/branches/rename",
             post(routes_extra::branch_rename),
         )
         .route(
-            "/{owner}/{repo}/branches/{branch}/delete",
+            "/{owner}/{repo}/branches/delete",
             post(routes_extra::branch_delete),
         )
         .route("/{owner}/{repo}/tags", post(routes_extra::tag_create))
         .route(
-            "/{owner}/{repo}/tags/{tag}/rename",
+            "/{owner}/{repo}/tags/rename",
             post(routes_extra::tag_rename),
         )
         .route(
-            "/{owner}/{repo}/tags/{tag}/delete",
+            "/{owner}/{repo}/tags/delete",
             post(routes_extra::tag_delete),
         )
         .route(
@@ -262,6 +324,10 @@ pub fn app_router(state: AppState) -> Router {
         .route(
             "/{owner}/{repo}/pulls/{number}/milestone",
             post(routes::pull_milestone_save),
+        )
+        .route(
+            "/{owner}/{repo}/pulls/{number}/review",
+            post(routes::pull_review),
         )
         .route(
             "/{owner}/{repo}/labels",
@@ -384,6 +450,7 @@ pub fn app_router(state: AppState) -> Router {
         )
         .route("/{username}", get(routes::profile))
         .nest_service("/static", ServeDir::new(static_dir))
+        .layer(from_fn(inject_render_timing))
         .layer(from_fn(normalize_git_url))
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
         .layer(RequestBodyLimitLayer::new(100 * 1024 * 1024))
@@ -392,7 +459,8 @@ pub fn app_router(state: AppState) -> Router {
 
 #[cfg(test)]
 mod path_tests {
-    use super::normalize_repo_path;
+    use super::{format_render_duration, inject_render_marker, normalize_repo_path};
+    use std::time::Duration;
 
     #[test]
     fn strips_git_suffix_and_slash() {
@@ -401,6 +469,20 @@ mod path_tests {
         assert_eq!(normalize_repo_path("/o/r.git/info/refs"), "/o/r/info/refs");
         assert_eq!(normalize_repo_path("/o/r/"), "/o/r");
         assert_eq!(normalize_repo_path("/"), "/");
+    }
+
+    #[test]
+    fn injects_render_timing_marker() {
+        let html = b"<footer>rendered in <!--kg-render-ms--></footer>";
+        let out = inject_render_marker(html, "4.2ms").unwrap();
+        assert_eq!(out, b"<footer>rendered in 4.2ms</footer>");
+        assert!(inject_render_marker(b"<footer>kitgit</footer>", "1ms").is_none());
+    }
+
+    #[test]
+    fn formats_render_duration() {
+        assert_eq!(format_render_duration(Duration::from_micros(4200)), "4.2ms");
+        assert_eq!(format_render_duration(Duration::from_millis(42)), "42ms");
     }
 }
 

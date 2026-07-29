@@ -20,12 +20,19 @@
     · {{ commit.author }}
   </p>
   <p class="kg-title">
-    <a href="/{{ owner.username }}/{{ repo.name }}/commit/{{ commit.id }}">{{ commit.message }}</a>
+    <a href="/{{ owner.username }}/{{ repo.name }}/commit/{{ commit.id }}{% if show_full %}?full=1{% endif %}">{{ commit.message }}</a>
     {% let c = commit %}
     {% let show_unverified = true %}
     {% include "partials/verified_badge.html" %}
   </p>
 
   {{ diff_html|safe }}
+  {% if truncated && !show_full %}
+  <p class="kg-diff__truncated">
+    Large diffs are not rendered by default.
+    Showing the first 50 of {{ total_lines }} lines.
+    <a class="kg-btn kg-btn--ghost" href="/{{ owner.username }}/{{ repo.name }}/diff/{{ commit.id }}?full=1">Show full diff</a>
+  </p>
+  {% endif %}
 </section>
 {% endblock %}

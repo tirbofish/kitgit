@@ -288,6 +288,16 @@ pub struct Comment {
 }
 
 #[derive(Debug, Clone, FromRow)]
+pub struct PullReview {
+    pub id: Uuid,
+    pub pull_id: Uuid,
+    pub reviewer_id: Uuid,
+    pub state: String,
+    pub body: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow)]
 pub struct Release {
     pub id: Uuid,
     pub repo_id: Uuid,

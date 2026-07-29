@@ -9,7 +9,7 @@ use askama_web::WebTemplate;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-// ΓöÇΓöÇ view models ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// ── view models ──────────────────────────────────────────────────────────────
 
 pub struct ActivityRow {
     pub kind: String,
@@ -41,6 +41,34 @@ pub struct CommentView {
     pub reactions: Vec<ReactionView>,
 }
 
+pub struct PullReviewView {
+    pub id: Uuid,
+    pub reviewer: User,
+    pub avatar_url: String,
+    pub state: String,
+    pub body: String,
+    pub body_html: String,
+    pub created_at: DateTime<Utc>,
+}
+
+impl PullReviewView {
+    pub fn state_label(&self) -> &'static str {
+        match self.state.as_str() {
+            "approved" => "approved",
+            "changes_requested" => "changes requested",
+            _ => "commented",
+        }
+    }
+
+    pub fn state_class(&self) -> &'static str {
+        match self.state.as_str() {
+            "approved" => "kg-badge--approved",
+            "changes_requested" => "kg-badge--changes",
+            _ => "kg-badge--commented",
+        }
+    }
+}
+
 pub struct DiffFileView {
     pub path: String,
     pub anchor: String,
@@ -56,7 +84,10 @@ pub struct TreeEntryView {
     pub name: String,
     pub path: String,
     pub is_dir: bool,
-    pub mode: String,
+    /// Last commit that touched this path (summary).
+    pub commit_message: String,
+    /// Formatted timestamp for that commit.
+    pub commit_time: String,
 }
 
 pub struct CommitView {
@@ -65,6 +96,8 @@ pub struct CommitView {
     pub message: String,
     pub author: String,
     pub email: String,
+    /// Kitgit username when the commit email matches a known account.
+    pub author_username: Option<String>,
     pub time: i64,
     /// True when a signature blob was present on the commit (SSH or GPG).
     pub signed: bool,
@@ -83,6 +116,17 @@ impl CommitView {
             _ => "Unknown",
         }
     }
+
+    pub fn time_display(&self) -> String {
+        format_unix_time(self.time)
+    }
+}
+
+/// Human-readable UTC date/time from a Unix timestamp (seconds).
+pub fn format_unix_time(secs: i64) -> String {
+    chrono::DateTime::from_timestamp(secs, 0)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+        .unwrap_or_default()
 }
 
 pub struct CollaboratorView {
@@ -162,7 +206,7 @@ pub struct ReleaseAssetView {
     pub content_type: String,
 }
 
-// ΓöÇΓöÇ page templates ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// ── page templates ────────────────────────────────────────────────────────────
 
 #[derive(Template, WebTemplate)]
 #[template(path = "home.html")]
@@ -346,6 +390,7 @@ pub struct RepoHomeTemplate {
     pub languages: Vec<LanguageStatView>,
     pub empty: bool,
     pub latest_commit: Option<CommitView>,
+    pub commit_count: usize,
     pub starred: bool,
     pub watching: bool,
     pub forked_from: Option<(String, String)>,
@@ -366,6 +411,7 @@ pub struct RepoTreeTemplate {
     pub entries: Vec<TreeEntryView>,
     pub readme_html: Option<String>,
     pub latest_commit: Option<CommitView>,
+    pub commit_count: usize,
     pub clone_http: String,
     pub clone_ssh: String,
 }
@@ -457,6 +503,9 @@ pub struct RepoCommitTemplate {
     pub commit: CommitView,
     pub message_html: String,
     pub diff_html: String,
+    pub show_full: bool,
+    pub truncated: bool,
+    pub total_lines: usize,
     pub clone_http: String,
     pub clone_ssh: String,
 }
@@ -470,6 +519,9 @@ pub struct RepoDiffTemplate {
     pub access: Access,
     pub commit: CommitView,
     pub diff_html: String,
+    pub show_full: bool,
+    pub truncated: bool,
+    pub total_lines: usize,
     pub clone_http: String,
     pub clone_ssh: String,
 }
@@ -585,9 +637,11 @@ pub struct PullViewTemplate {
     pub author_avatar: String,
     pub body_html: String,
     pub comments: Vec<CommentView>,
+    pub reviews: Vec<PullReviewView>,
     pub commits: Vec<CommitView>,
     pub diff_files: Vec<DiffFileView>,
     pub tab: String,
+    pub show_full: bool,
     pub conversation_count: usize,
     pub can_merge: bool,
     pub merge_styles: Vec<String>,
@@ -596,6 +650,7 @@ pub struct PullViewTemplate {
     pub milestone: Option<Milestone>,
     pub milestone_options: Vec<MilestoneOption>,
     pub can_triage: bool,
+    pub is_author: bool,
     pub clone_http: String,
     pub clone_ssh: String,
 }
