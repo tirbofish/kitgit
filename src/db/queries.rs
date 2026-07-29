@@ -812,6 +812,253 @@ pub async fn list_public_repos(
         .collect())
 }
 
+fn ilike_contains(term: &str) -> String {
+    format!("%{}%", term.replace('%', "\\%").replace('_', "\\_"))
+}
+
+pub async fn search_repos(
+    pool: &PgPool,
+    query: &str,
+    viewer: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<(Repository, String)>> {
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        id: Uuid,
+        owner_id: Uuid,
+        name: String,
+        description: String,
+        visibility: String,
+        default_branch: String,
+        archived: bool,
+        issues_enabled: bool,
+        pulls_enabled: bool,
+        releases_enabled: bool,
+        allow_merge: bool,
+        allow_squash: bool,
+        allow_rebase: bool,
+        default_merge_style: String,
+        protect_default_branch: bool,
+        protect_block_force_push: bool,
+        fork_of_id: Option<Uuid>,
+        stars_count: i32,
+        watches_count: i32,
+        forks_count: i32,
+        created_at: DateTime<Utc>,
+        updated_at: DateTime<Utc>,
+        owner_username: String,
+    }
+
+    let like = ilike_contains(query.trim());
+    let rows: Vec<Row> = sqlx::query_as(
+        r#"
+        SELECT r.*, u.username AS owner_username
+        FROM repositories r
+        JOIN users u ON u.id = r.owner_id
+        WHERE r.archived = false
+          AND (
+            r.visibility = 'public'
+            OR (
+              $3::uuid IS NOT NULL
+              AND (
+                r.owner_id = $3
+                OR EXISTS (
+                  SELECT 1 FROM collaborators c
+                  WHERE c.repo_id = r.id AND c.user_id = $3
+                )
+              )
+            )
+          )
+          AND (
+            r.name ILIKE $1 ESCAPE '\'
+            OR r.description ILIKE $1 ESCAPE '\'
+            OR u.username ILIKE $1 ESCAPE '\'
+          )
+        ORDER BY r.updated_at DESC
+        LIMIT $2
+        "#,
+    )
+    .bind(&like)
+    .bind(limit)
+    .bind(viewer)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            (
+                Repository {
+                    id: r.id,
+                    owner_id: r.owner_id,
+                    name: r.name,
+                    description: r.description,
+                    visibility: r.visibility,
+                    default_branch: r.default_branch,
+                    archived: r.archived,
+                    issues_enabled: r.issues_enabled,
+                    pulls_enabled: r.pulls_enabled,
+                    releases_enabled: r.releases_enabled,
+                    allow_merge: r.allow_merge,
+                    allow_squash: r.allow_squash,
+                    allow_rebase: r.allow_rebase,
+                    default_merge_style: r.default_merge_style,
+                    protect_default_branch: r.protect_default_branch,
+                    protect_block_force_push: r.protect_block_force_push,
+                    fork_of_id: r.fork_of_id,
+                    stars_count: r.stars_count,
+                    watches_count: r.watches_count,
+                    forks_count: r.forks_count,
+                    created_at: r.created_at,
+                    updated_at: r.updated_at,
+                },
+                r.owner_username,
+            )
+        })
+        .collect())
+}
+
+pub async fn search_users_public(
+    pool: &PgPool,
+    query: &str,
+    limit: i64,
+) -> Result<Vec<User>> {
+    let like = ilike_contains(query.trim());
+    Ok(sqlx::query_as::<_, User>(
+        r#"
+        SELECT * FROM users
+        WHERE is_suspended = FALSE
+          AND (
+            username ILIKE $1 ESCAPE '\'
+            OR display_name ILIKE $1 ESCAPE '\'
+            OR bio ILIKE $1 ESCAPE '\'
+          )
+        ORDER BY username
+        LIMIT $2
+        "#,
+    )
+    .bind(&like)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?)
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct SearchIssueHit {
+    pub owner: String,
+    pub repo_name: String,
+    pub number: i32,
+    pub title: String,
+    pub state: String,
+    pub visibility: String,
+    pub updated_at: DateTime<Utc>,
+}
+
+pub async fn search_issues(
+    pool: &PgPool,
+    query: &str,
+    viewer: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<SearchIssueHit>> {
+    let like = ilike_contains(query.trim());
+    let exact_number = query.trim().trim_start_matches('#');
+    Ok(sqlx::query_as::<_, SearchIssueHit>(
+        r#"
+        SELECT u.username AS owner, r.name AS repo_name, i.number, i.title, i.state,
+               r.visibility, i.updated_at
+        FROM issues i
+        JOIN repositories r ON r.id = i.repo_id
+        JOIN users u ON u.id = r.owner_id
+        WHERE r.archived = false
+          AND r.issues_enabled = TRUE
+          AND (
+            r.visibility = 'public'
+            OR (
+              $3::uuid IS NOT NULL
+              AND (
+                r.owner_id = $3
+                OR EXISTS (
+                  SELECT 1 FROM collaborators c
+                  WHERE c.repo_id = r.id AND c.user_id = $3
+                )
+              )
+            )
+          )
+          AND (
+            i.title ILIKE $1 ESCAPE '\'
+            OR i.body ILIKE $1 ESCAPE '\'
+            OR CAST(i.number AS TEXT) = $4
+          )
+        ORDER BY i.updated_at DESC
+        LIMIT $2
+        "#,
+    )
+    .bind(&like)
+    .bind(limit)
+    .bind(viewer)
+    .bind(exact_number)
+    .fetch_all(pool)
+    .await?)
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct SearchPullHit {
+    pub owner: String,
+    pub repo_name: String,
+    pub number: i32,
+    pub title: String,
+    pub state: String,
+    pub visibility: String,
+    pub updated_at: DateTime<Utc>,
+}
+
+pub async fn search_pulls(
+    pool: &PgPool,
+    query: &str,
+    viewer: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<SearchPullHit>> {
+    let like = ilike_contains(query.trim());
+    let exact_number = query.trim().trim_start_matches('#');
+    Ok(sqlx::query_as::<_, SearchPullHit>(
+        r#"
+        SELECT u.username AS owner, r.name AS repo_name, p.number, p.title, p.state,
+               r.visibility, p.updated_at
+        FROM pull_requests p
+        JOIN repositories r ON r.id = p.repo_id
+        JOIN users u ON u.id = r.owner_id
+        WHERE r.archived = false
+          AND r.pulls_enabled = TRUE
+          AND (
+            r.visibility = 'public'
+            OR (
+              $3::uuid IS NOT NULL
+              AND (
+                r.owner_id = $3
+                OR EXISTS (
+                  SELECT 1 FROM collaborators c
+                  WHERE c.repo_id = r.id AND c.user_id = $3
+                )
+              )
+            )
+          )
+          AND (
+            p.title ILIKE $1 ESCAPE '\'
+            OR p.body ILIKE $1 ESCAPE '\'
+            OR CAST(p.number AS TEXT) = $4
+          )
+        ORDER BY p.updated_at DESC
+        LIMIT $2
+        "#,
+    )
+    .bind(&like)
+    .bind(limit)
+    .bind(viewer)
+    .bind(exact_number)
+    .fetch_all(pool)
+    .await?)
+}
+
 pub async fn delete_repo(pool: &PgPool, id: Uuid) -> Result<()> {
     sqlx::query("DELETE FROM repositories WHERE id = $1")
         .bind(id)
