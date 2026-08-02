@@ -1,0 +1,38 @@
+{% extends "layout.html" %}
+{% block title %}settings · {{ organization.username }} — kitgit{% endblock %}
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title">{{ organization.username }} settings</h1>
+  {% if let Some(err) = error %}<div class="kg-flash">{{ err }}</div>{% endif %}
+  <form class="kg-form" method="post" action="/organizations/{{ organization.username }}/settings">
+    <label>slug <input name="slug" value="{{ organization.username }}" required /></label>
+    <label>display name <input name="display_name" value="{{ organization.display_name }}" /></label>
+    <label>description <textarea name="description" rows="4">{{ description }}</textarea></label>
+    <button class="kg-btn" type="submit">save settings</button>
+  </form>
+  <span class="kg-kicker">members</span>
+  <ul class="kg-list">
+    {% for m in members %}
+    <li>
+      <span><a href="/{{ m.user.username }}">{{ m.user.username }}</a> <span class="kg-badge">{{ m.role }}</span> <span class="kg-meta">{{ m.visibility }}</span></span>
+      <span class="kg-actions">
+        {% if m.role == "member" %}<form method="post" action="/organizations/{{ organization.username }}/people/{{ m.user.id }}/role"><input type="hidden" name="role" value="owner" /><button class="kg-btn kg-btn--ghost" type="submit">make owner</button></form>{% else %}<form method="post" action="/organizations/{{ organization.username }}/people/{{ m.user.id }}/role"><input type="hidden" name="role" value="member" /><button class="kg-btn kg-btn--ghost" type="submit">make member</button></form>{% endif %}
+        <form method="post" action="/organizations/{{ organization.username }}/people/{{ m.user.id }}/remove"><button class="kg-btn kg-btn--danger-ghost" type="submit">remove</button></form>
+      </span>
+    </li>
+    {% endfor %}
+  </ul>
+  <form class="kg-form" method="post" action="/organizations/{{ organization.username }}/people/invite">
+    <span class="kg-kicker">invite member</span>
+    <label>username <input name="username" required /></label>
+    <label>role <select name="role"><option value="member">member</option><option value="owner">owner</option></select></label>
+    <button class="kg-btn" type="submit">send invitation</button>
+  </form>
+  <span class="kg-kicker">pending invitations</span>
+  {% if invitations.is_empty() %}<p class="kg-muted">No pending invitations.</p>{% else %}
+    <ul class="kg-list">{% for i in invitations %}<li><span>{{ i.invitee_id }} <span class="kg-badge">{{ i.role }}</span></span><form method="post" action="/organizations/{{ organization.username }}/invitations/{{ i.id }}/cancel"><button class="kg-btn kg-btn--danger-ghost" type="submit">cancel</button></form></li>{% endfor %}</ul>
+  {% endif %}
+  <span class="kg-kicker">danger zone</span>
+  <form class="kg-form" method="post" action="/organizations/{{ organization.username }}/delete"><label>type organization slug to delete <input name="confirm" required /></label><button class="kg-btn kg-btn--danger" type="submit">delete organization</button></form>
+</section>
+{% endblock %}

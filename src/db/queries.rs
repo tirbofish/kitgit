@@ -12,12 +12,16 @@ pub async fn upsert_user_from_oidc(
     email: &str,
     avatar_url: Option<&str>,
 ) -> Result<User> {
-    let avatar_url = avatar_url
-        .filter(|u| !u.is_empty() && !u.starts_with("/avatars/"));
+    let avatar_url = avatar_url.filter(|u| !u.is_empty() && !u.starts_with("/avatars/"));
+    if let Some(existing) = get_namespace_by_username(pool, username).await? {
+        if existing.is_organization() || existing.oidc_sub != oidc_sub {
+            anyhow::bail!("username is already used by another namespace");
+        }
+    }
     let user = sqlx::query_as::<_, User>(
         r#"
-        INSERT INTO users (oidc_sub, username, display_name, email, avatar_url)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO users (oidc_sub, username, account_type, display_name, email, avatar_url)
+        VALUES ($1, $2, 'user', $3, $4, $5)
         ON CONFLICT (oidc_sub) DO UPDATE SET
             display_name = EXCLUDED.display_name,
             email = EXCLUDED.email,
@@ -37,10 +41,9 @@ pub async fn upsert_user_from_oidc(
 }
 
 pub async fn site_admin_count(pool: &PgPool) -> Result<i64> {
-    let (n,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM users WHERE is_site_admin = TRUE")
-            .fetch_one(pool)
-            .await?;
+    let (n,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE is_site_admin = TRUE")
+        .fetch_one(pool)
+        .await?;
     Ok(n)
 }
 
@@ -56,26 +59,523 @@ pub async fn set_site_admin(pool: &PgPool, id: Uuid, is_admin: bool) -> Result<U
 
 pub async fn list_users(pool: &PgPool) -> Result<Vec<User>> {
     Ok(sqlx::query_as::<_, User>(
-        "SELECT * FROM users ORDER BY username",
+        "SELECT * FROM users WHERE account_type = 'user' ORDER BY username",
     )
     .fetch_all(pool)
     .await?)
 }
 
 pub async fn get_user_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>> {
-    Ok(sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
-        .bind(id)
-        .fetch_optional(pool)
-        .await?)
+    Ok(
+        sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1 AND account_type = 'user'")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?,
+    )
+}
+
+pub async fn get_user_by_id_any(pool: &PgPool, id: Uuid) -> Result<Option<User>> {
+    Ok(
+        sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?,
+    )
 }
 
 pub async fn get_user_by_username(pool: &PgPool, username: &str) -> Result<Option<User>> {
+    Ok(sqlx::query_as::<_, User>(
+        "SELECT * FROM users WHERE username = $1 AND account_type = 'user'",
+    )
+    .bind(username)
+    .fetch_optional(pool)
+    .await?)
+}
+
+/// Resolve either kind of public namespace. Authentication callers must use
+/// `get_user_by_username`, which deliberately excludes organization accounts.
+pub async fn get_namespace_by_username(pool: &PgPool, username: &str) -> Result<Option<User>> {
     Ok(
         sqlx::query_as::<_, User>("SELECT * FROM users WHERE username = $1")
             .bind(username)
             .fetch_optional(pool)
             .await?,
     )
+}
+
+pub async fn create_organization(
+    pool: &PgPool,
+    slug: &str,
+    display_name: &str,
+    description: &str,
+    owner_id: Uuid,
+) -> Result<User> {
+    let mut tx = pool.begin().await?;
+    let org = sqlx::query_as::<_, User>(
+        r#"
+        INSERT INTO users (oidc_sub, username, account_type, display_name, bio)
+        VALUES ('org:' || gen_random_uuid()::text, $1, 'organization', $2, $3)
+        RETURNING *
+        "#,
+    )
+    .bind(slug)
+    .bind(display_name)
+    .bind(description)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query("INSERT INTO organizations (id, description) VALUES ($1, $2)")
+        .bind(org.id)
+        .bind(description)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "INSERT INTO organization_memberships (organization_id, user_id, role) VALUES ($1, $2, 'owner')",
+    )
+    .bind(org.id)
+    .bind(owner_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(org)
+}
+
+pub async fn get_organization(pool: &PgPool, id: Uuid) -> Result<Option<(User, Organization)>> {
+    let org = sqlx::query_as::<_, User>(
+        "SELECT * FROM users WHERE id = $1 AND account_type = 'organization'",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    let Some(org_user) = org else { return Ok(None) };
+    let profile = sqlx::query_as::<_, Organization>("SELECT * FROM organizations WHERE id = $1")
+        .bind(id)
+        .fetch_one(pool)
+        .await?;
+    Ok(Some((org_user, profile)))
+}
+
+pub async fn get_organization_by_username(
+    pool: &PgPool,
+    username: &str,
+) -> Result<Option<(User, Organization)>> {
+    let org = sqlx::query_as::<_, User>(
+        "SELECT * FROM users WHERE username = $1 AND account_type = 'organization'",
+    )
+    .bind(username)
+    .fetch_optional(pool)
+    .await?;
+    let Some(org_user) = org else { return Ok(None) };
+    let profile = sqlx::query_as::<_, Organization>("SELECT * FROM organizations WHERE id = $1")
+        .bind(org_user.id)
+        .fetch_one(pool)
+        .await?;
+    Ok(Some((org_user, profile)))
+}
+
+pub async fn update_organization(
+    pool: &PgPool,
+    id: Uuid,
+    display_name: &str,
+    description: &str,
+) -> Result<User> {
+    let mut tx = pool.begin().await?;
+    let org = sqlx::query_as::<_, User>(
+        "UPDATE users SET display_name = $2, updated_at = now() WHERE id = $1 AND account_type = 'organization' RETURNING *",
+    )
+    .bind(id)
+    .bind(display_name)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE organizations SET description = $2, updated_at = now() WHERE id = $1")
+        .bind(id)
+        .bind(description)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(org)
+}
+
+pub async fn rename_namespace(pool: &PgPool, id: Uuid, slug: &str) -> Result<()> {
+    sqlx::query("UPDATE users SET username = $2, updated_at = now() WHERE id = $1")
+        .bind(id)
+        .bind(slug)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn list_owned_organizations(pool: &PgPool, user_id: Uuid) -> Result<Vec<User>> {
+    Ok(sqlx::query_as::<_, User>(
+        r#"
+        SELECT u.* FROM users u
+        JOIN organization_memberships m ON m.organization_id = u.id
+        WHERE m.user_id = $1 AND m.role = 'owner' AND u.account_type = 'organization'
+        ORDER BY u.username
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn list_user_organization_names(
+    pool: &PgPool,
+    user_id: Uuid,
+    include_private: bool,
+) -> Result<Vec<User>> {
+    let visibility_clause = if include_private {
+        ""
+    } else {
+        " AND m.visibility = 'public'"
+    };
+    let sql = format!(
+        "SELECT u.* FROM users u JOIN organization_memberships m ON m.organization_id = u.id WHERE m.user_id = $1 AND u.account_type = 'organization'{visibility_clause} ORDER BY u.username"
+    );
+    Ok(sqlx::query_as::<_, User>(&sql)
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?)
+}
+
+pub async fn list_user_organizations(
+    pool: &PgPool,
+    user_id: Uuid,
+    public_only: bool,
+) -> Result<Vec<OrganizationMember>> {
+    let rows = if public_only {
+        sqlx::query_as::<_, OrganizationMember>(
+            r#"
+            SELECT m.organization_id, m.user_id, m.role, m.visibility,
+                   m.created_at AS membership_created_at,
+                   m.updated_at AS membership_updated_at,
+                   u.oidc_sub, u.username, u.account_type, u.display_name,
+                   u.email, u.bio, u.avatar_path, u.avatar_url,
+                   u.is_site_admin, u.is_suspended, u.show_email,
+                   u.vigilant_mode, u.theme,
+                   u.created_at AS user_created_at, u.updated_at AS user_updated_at
+            FROM users u
+            JOIN organization_memberships m ON m.organization_id = u.id
+            WHERE m.user_id = $1 AND m.visibility = 'public'
+              AND u.account_type = 'organization'
+            ORDER BY u.username
+            "#,
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, OrganizationMember>(
+            r#"
+            SELECT m.organization_id, m.user_id, m.role, m.visibility,
+                   m.created_at AS membership_created_at,
+                   m.updated_at AS membership_updated_at,
+                   u.oidc_sub, u.username, u.account_type, u.display_name,
+                   u.email, u.bio, u.avatar_path, u.avatar_url,
+                   u.is_site_admin, u.is_suspended, u.show_email,
+                   u.vigilant_mode, u.theme,
+                   u.created_at AS user_created_at, u.updated_at AS user_updated_at
+            FROM users u
+            JOIN organization_memberships m ON m.organization_id = u.id
+            WHERE m.user_id = $1 AND u.account_type = 'organization'
+            ORDER BY u.username
+            "#,
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?
+    };
+    Ok(rows)
+}
+
+pub async fn organization_membership(
+    pool: &PgPool,
+    organization_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<OrganizationMembership>> {
+    Ok(sqlx::query_as::<_, OrganizationMembership>(
+        "SELECT * FROM organization_memberships WHERE organization_id = $1 AND user_id = $2",
+    )
+    .bind(organization_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
+pub async fn update_membership_visibility(
+    pool: &PgPool,
+    organization_id: Uuid,
+    user_id: Uuid,
+    visibility: &str,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE organization_memberships SET visibility = $3, updated_at = now() WHERE organization_id = $1 AND user_id = $2",
+    )
+    .bind(organization_id)
+    .bind(user_id)
+    .bind(visibility)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn add_organization_membership(
+    pool: &PgPool,
+    organization_id: Uuid,
+    user_id: Uuid,
+    role: &str,
+) -> Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO organization_memberships (organization_id, user_id, role)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (organization_id, user_id) DO UPDATE
+        SET role = EXCLUDED.role, updated_at = now()
+        "#,
+    )
+    .bind(organization_id)
+    .bind(user_id)
+    .bind(role)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn remove_organization_membership(
+    pool: &PgPool,
+    organization_id: Uuid,
+    user_id: Uuid,
+) -> Result<()> {
+    sqlx::query("DELETE FROM organization_memberships WHERE organization_id = $1 AND user_id = $2")
+        .bind(organization_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn count_organization_owners(pool: &PgPool, organization_id: Uuid) -> Result<i64> {
+    let (count,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM organization_memberships WHERE organization_id = $1 AND role = 'owner'",
+    )
+    .bind(organization_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(count)
+}
+
+pub async fn create_organization_invitation(
+    pool: &PgPool,
+    organization_id: Uuid,
+    invitee_id: Uuid,
+    inviter_id: Uuid,
+    role: &str,
+) -> Result<OrganizationInvitation> {
+    Ok(sqlx::query_as::<_, OrganizationInvitation>(
+        r#"
+        INSERT INTO organization_invitations
+            (organization_id, invitee_id, inviter_id, role)
+        VALUES ($1, $2, $3, $4)
+        RETURNING *
+        "#,
+    )
+    .bind(organization_id)
+    .bind(invitee_id)
+    .bind(inviter_id)
+    .bind(role)
+    .fetch_one(pool)
+    .await?)
+}
+
+pub async fn get_organization_invitation(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<Option<OrganizationInvitation>> {
+    Ok(sqlx::query_as::<_, OrganizationInvitation>(
+        "SELECT * FROM organization_invitations WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?)
+}
+
+pub async fn list_organization_invitations(
+    pool: &PgPool,
+    organization_id: Uuid,
+) -> Result<Vec<OrganizationInvitation>> {
+    sqlx::query(
+        "UPDATE organization_invitations SET status = 'expired', responded_at = now() WHERE organization_id = $1 AND status = 'pending' AND expires_at <= now()",
+    )
+    .bind(organization_id)
+    .execute(pool)
+    .await?;
+    Ok(sqlx::query_as::<_, OrganizationInvitation>(
+        "SELECT * FROM organization_invitations WHERE organization_id = $1 AND status = 'pending' ORDER BY created_at DESC",
+    )
+    .bind(organization_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn list_user_organization_invitations(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<OrganizationInvitation>> {
+    sqlx::query(
+        "UPDATE organization_invitations SET status = 'expired', responded_at = now() WHERE invitee_id = $1 AND status = 'pending' AND expires_at <= now()",
+    )
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(sqlx::query_as::<_, OrganizationInvitation>(
+        "SELECT * FROM organization_invitations WHERE invitee_id = $1 AND status = 'pending' ORDER BY created_at DESC",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn respond_to_organization_invitation(
+    pool: &PgPool,
+    id: Uuid,
+    invitee_id: Uuid,
+    accepted: bool,
+) -> Result<Option<OrganizationInvitation>> {
+    let mut tx = pool.begin().await?;
+    let invitation = sqlx::query_as::<_, OrganizationInvitation>(
+        r#"
+        SELECT * FROM organization_invitations
+        WHERE id = $1 AND invitee_id = $2 AND status = 'pending'
+        FOR UPDATE
+        "#,
+    )
+    .bind(id)
+    .bind(invitee_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(invitation) = invitation else {
+        tx.rollback().await?;
+        return Ok(None);
+    };
+    if invitation.expires_at <= Utc::now() {
+        sqlx::query(
+            "UPDATE organization_invitations SET status = 'expired', responded_at = now() WHERE id = $1",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        return Ok(None);
+    }
+    if accepted {
+        sqlx::query(
+            "INSERT INTO organization_memberships (organization_id, user_id, role) VALUES ($1, $2, $3) ON CONFLICT (organization_id, user_id) DO UPDATE SET role = EXCLUDED.role, updated_at = now()",
+        )
+        .bind(invitation.organization_id)
+        .bind(invitee_id)
+        .bind(&invitation.role)
+        .execute(&mut *tx)
+        .await?;
+    }
+    let status = if accepted { "accepted" } else { "declined" };
+    let result = sqlx::query_as::<_, OrganizationInvitation>(
+        "UPDATE organization_invitations SET status = $2, responded_at = now() WHERE id = $1 RETURNING *",
+    )
+    .bind(id)
+    .bind(status)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(Some(result))
+}
+
+pub async fn cancel_organization_invitation(
+    pool: &PgPool,
+    id: Uuid,
+    organization_id: Uuid,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE organization_invitations SET status = 'cancelled', responded_at = now() WHERE id = $1 AND organization_id = $2 AND status = 'pending'",
+    )
+    .bind(id)
+    .bind(organization_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn expire_organization_invitation(pool: &PgPool, id: Uuid) -> Result<()> {
+    sqlx::query(
+        "UPDATE organization_invitations SET status = 'expired', responded_at = now() WHERE id = $1 AND status = 'pending'",
+    )
+    .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn organization_repo_count(pool: &PgPool, organization_id: Uuid) -> Result<i64> {
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM repositories WHERE owner_id = $1")
+        .bind(organization_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(count)
+}
+
+pub async fn delete_organization(pool: &PgPool, id: Uuid) -> Result<()> {
+    sqlx::query("DELETE FROM users WHERE id = $1 AND account_type = 'organization'")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn list_organization_members(
+    pool: &PgPool,
+    organization_id: Uuid,
+    include_private: bool,
+) -> Result<Vec<OrganizationMember>> {
+    let rows = if include_private {
+        sqlx::query_as::<_, OrganizationMember>(
+            r#"
+            SELECT m.organization_id, m.user_id, m.role, m.visibility,
+                   m.created_at AS membership_created_at,
+                   m.updated_at AS membership_updated_at,
+                   u.oidc_sub, u.username, u.account_type, u.display_name,
+                   u.email, u.bio, u.avatar_path, u.avatar_url,
+                   u.is_site_admin, u.is_suspended, u.show_email,
+                   u.vigilant_mode, u.theme,
+                   u.created_at AS user_created_at, u.updated_at AS user_updated_at
+            FROM organization_memberships m
+            JOIN users u ON u.id = m.user_id
+            WHERE m.organization_id = $1
+            ORDER BY m.role, u.username
+            "#,
+        )
+        .bind(organization_id)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, OrganizationMember>(
+            r#"
+            SELECT m.organization_id, m.user_id, m.role, m.visibility,
+                   m.created_at AS membership_created_at,
+                   m.updated_at AS membership_updated_at,
+                   u.oidc_sub, u.username, u.account_type, u.display_name,
+                   u.email, u.bio, u.avatar_path, u.avatar_url,
+                   u.is_site_admin, u.is_suspended, u.show_email,
+                   u.vigilant_mode, u.theme,
+                   u.created_at AS user_created_at, u.updated_at AS user_updated_at
+            FROM organization_memberships m
+            JOIN users u ON u.id = m.user_id
+            WHERE m.organization_id = $1 AND m.visibility = 'public'
+            ORDER BY m.role, u.username
+            "#,
+        )
+        .bind(organization_id)
+        .fetch_all(pool)
+        .await?
+    };
+    Ok(rows)
 }
 
 pub async fn update_user_profile(
@@ -190,9 +690,10 @@ pub async fn search_users(
         let users = sqlx::query_as::<_, User>(
             r#"
             SELECT * FROM users
-            WHERE username ILIKE $1 ESCAPE '\'
+            WHERE account_type = 'user'
+              AND (username ILIKE $1 ESCAPE '\'
                OR email ILIKE $1 ESCAPE '\'
-               OR display_name ILIKE $1 ESCAPE '\'
+               OR display_name ILIKE $1 ESCAPE '\')
             ORDER BY username
             LIMIT $2 OFFSET $3
             "#,
@@ -205,9 +706,10 @@ pub async fn search_users(
         let (total,): (i64,) = sqlx::query_as(
             r#"
             SELECT COUNT(*) FROM users
-            WHERE username ILIKE $1 ESCAPE '\'
+            WHERE account_type = 'user'
+              AND (username ILIKE $1 ESCAPE '\'
                OR email ILIKE $1 ESCAPE '\'
-               OR display_name ILIKE $1 ESCAPE '\'
+               OR display_name ILIKE $1 ESCAPE '\')
             "#,
         )
         .bind(&like)
@@ -216,15 +718,16 @@ pub async fn search_users(
         (users, total)
     } else {
         let users = sqlx::query_as::<_, User>(
-            "SELECT * FROM users ORDER BY username LIMIT $1 OFFSET $2",
+            "SELECT * FROM users WHERE account_type = 'user' ORDER BY username LIMIT $1 OFFSET $2",
         )
         .bind(limit)
         .bind(offset)
         .fetch_all(pool)
         .await?;
-        let (total,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
-            .fetch_one(pool)
-            .await?;
+        let (total,): (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM users WHERE account_type = 'user'")
+                .fetch_one(pool)
+                .await?;
         (users, total)
     };
     Ok((users, total))
@@ -346,11 +849,10 @@ pub async fn admin_stats(pool: &PgPool) -> Result<AdminStats> {
         sqlx::query_as("SELECT COUNT(*) FROM repositories WHERE visibility = 'public'")
             .fetch_one(pool)
             .await?;
-    let (recent_signups,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM users WHERE created_at > now() - interval '7 days'",
-    )
-    .fetch_one(pool)
-    .await?;
+    let (recent_signups,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM users WHERE created_at > now() - interval '7 days'")
+            .fetch_one(pool)
+            .await?;
     let (active_invites,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM invite_codes WHERE used_at IS NULL AND revoked_at IS NULL",
     )
@@ -488,11 +990,7 @@ pub async fn list_repos_admin(
     Ok((repos, total))
 }
 
-pub async fn set_repo_visibility(
-    pool: &PgPool,
-    id: Uuid,
-    visibility: &str,
-) -> Result<Repository> {
+pub async fn set_repo_visibility(pool: &PgPool, id: Uuid, visibility: &str) -> Result<Repository> {
     Ok(sqlx::query_as::<_, Repository>(
         "UPDATE repositories SET visibility = $2, updated_at = now() WHERE id = $1 RETURNING *",
     )
@@ -571,17 +1069,19 @@ pub async fn get_repo_by_id(pool: &PgPool, id: Uuid) -> Result<Option<(Repositor
     }))
 }
 
-
-pub async fn create_session(pool: &PgPool, user_id: Uuid, token_hash: &str, days: i64) -> Result<()> {
+pub async fn create_session(
+    pool: &PgPool,
+    user_id: Uuid,
+    token_hash: &str,
+    days: i64,
+) -> Result<()> {
     let expires = Utc::now() + chrono::Duration::days(days);
-    sqlx::query(
-        "INSERT INTO sessions (user_id, token_hash, expires_at) VALUES ($1, $2, $3)",
-    )
-    .bind(user_id)
-    .bind(token_hash)
-    .bind(expires)
-    .execute(pool)
-    .await?;
+    sqlx::query("INSERT INTO sessions (user_id, token_hash, expires_at) VALUES ($1, $2, $3)")
+        .bind(user_id)
+        .bind(token_hash)
+        .bind(expires)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -627,12 +1127,11 @@ pub async fn store_oidc_pending(
 }
 
 pub async fn take_oidc_pending(pool: &PgPool, state: &str) -> Result<Option<(String, String)>> {
-    let row: Option<(String, String)> = sqlx::query_as(
-        "DELETE FROM oidc_pending WHERE state = $1 RETURNING pkce_verifier, nonce",
-    )
-    .bind(state)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(String, String)> =
+        sqlx::query_as("DELETE FROM oidc_pending WHERE state = $1 RETURNING pkce_verifier, nonce")
+            .bind(state)
+            .fetch_optional(pool)
+            .await?;
     Ok(row)
 }
 
@@ -669,8 +1168,12 @@ pub async fn create_repo(
     Ok(repo)
 }
 
-pub async fn get_repo(pool: &PgPool, owner: &str, name: &str) -> Result<Option<(Repository, User)>> {
-    let owner_user = match get_user_by_username(pool, owner).await? {
+pub async fn get_repo(
+    pool: &PgPool,
+    owner: &str,
+    name: &str,
+) -> Result<Option<(Repository, User)>> {
+    let owner_user = match get_namespace_by_username(pool, owner).await? {
         Some(u) => u,
         None => return Ok(None),
     };
@@ -684,7 +1187,11 @@ pub async fn get_repo(pool: &PgPool, owner: &str, name: &str) -> Result<Option<(
     Ok(repo.map(|r| (r, owner_user)))
 }
 
-pub async fn list_user_repos(pool: &PgPool, owner_id: Uuid, viewer: Option<Uuid>) -> Result<Vec<Repository>> {
+pub async fn list_user_repos(
+    pool: &PgPool,
+    owner_id: Uuid,
+    viewer: Option<Uuid>,
+) -> Result<Vec<Repository>> {
     Ok(sqlx::query_as::<_, Repository>(
         r#"
         SELECT r.* FROM repositories r
@@ -692,6 +1199,11 @@ pub async fn list_user_repos(pool: &PgPool, owner_id: Uuid, viewer: Option<Uuid>
           AND (
             r.visibility = 'public'
             OR r.owner_id = $2
+            OR EXISTS (
+              SELECT 1 FROM organization_memberships om
+              WHERE om.organization_id = r.owner_id
+                AND om.user_id = $2 AND om.role = 'owner'
+            )
             OR EXISTS (
               SELECT 1 FROM collaborators c
               WHERE c.repo_id = r.id AND c.user_id = $2
@@ -863,6 +1375,11 @@ pub async fn search_repos(
               AND (
                 r.owner_id = $3
                 OR EXISTS (
+                  SELECT 1 FROM organization_memberships om
+                  WHERE om.organization_id = r.owner_id
+                    AND om.user_id = $3 AND om.role = 'owner'
+                )
+                OR EXISTS (
                   SELECT 1 FROM collaborators c
                   WHERE c.repo_id = r.id AND c.user_id = $3
                 )
@@ -918,16 +1435,12 @@ pub async fn search_repos(
         .collect())
 }
 
-pub async fn search_users_public(
-    pool: &PgPool,
-    query: &str,
-    limit: i64,
-) -> Result<Vec<User>> {
+pub async fn search_users_public(pool: &PgPool, query: &str, limit: i64) -> Result<Vec<User>> {
     let like = ilike_contains(query.trim());
     Ok(sqlx::query_as::<_, User>(
         r#"
         SELECT * FROM users
-        WHERE is_suspended = FALSE
+        WHERE account_type = 'user' AND is_suspended = FALSE
           AND (
             username ILIKE $1 ESCAPE '\'
             OR display_name ILIKE $1 ESCAPE '\'
@@ -977,6 +1490,11 @@ pub async fn search_issues(
               $3::uuid IS NOT NULL
               AND (
                 r.owner_id = $3
+                OR EXISTS (
+                  SELECT 1 FROM organization_memberships om
+                  WHERE om.organization_id = r.owner_id
+                    AND om.user_id = $3 AND om.role = 'owner'
+                )
                 OR EXISTS (
                   SELECT 1 FROM collaborators c
                   WHERE c.repo_id = r.id AND c.user_id = $3
@@ -1035,6 +1553,11 @@ pub async fn search_pulls(
               $3::uuid IS NOT NULL
               AND (
                 r.owner_id = $3
+                OR EXISTS (
+                  SELECT 1 FROM organization_memberships om
+                  WHERE om.organization_id = r.owner_id
+                    AND om.user_id = $3 AND om.role = 'owner'
+                )
                 OR EXISTS (
                   SELECT 1 FROM collaborators c
                   WHERE c.repo_id = r.id AND c.user_id = $3
@@ -1139,10 +1662,31 @@ pub async fn set_archived(pool: &PgPool, id: Uuid, archived: bool) -> Result<()>
     Ok(())
 }
 
-pub async fn repo_access(pool: &PgPool, repo: &Repository, user_id: Option<Uuid>) -> Result<Access> {
+pub async fn repo_access(
+    pool: &PgPool,
+    repo: &Repository,
+    user_id: Option<Uuid>,
+) -> Result<Access> {
     if let Some(uid) = user_id {
         if uid == repo.owner_id {
             return Ok(Access::Owner);
+        }
+        let owner_kind: Option<(String,)> =
+            sqlx::query_as("SELECT account_type FROM users WHERE id = $1")
+                .bind(repo.owner_id)
+                .fetch_optional(pool)
+                .await?;
+        if owner_kind.as_ref().map(|k| k.0.as_str()) == Some("organization") {
+            let owner_role: Option<(String,)> = sqlx::query_as(
+                "SELECT role FROM organization_memberships WHERE organization_id = $1 AND user_id = $2",
+            )
+            .bind(repo.owner_id)
+            .bind(uid)
+            .fetch_optional(pool)
+            .await?;
+            if owner_role.as_ref().map(|r| r.0.as_str()) == Some("owner") {
+                return Ok(Access::Owner);
+            }
         }
         if let Some(c) = sqlx::query_as::<_, Collaborator>(
             "SELECT * FROM collaborators WHERE repo_id = $1 AND user_id = $2",
@@ -1165,7 +1709,12 @@ pub async fn repo_access(pool: &PgPool, repo: &Repository, user_id: Option<Uuid>
     Ok(Access::None)
 }
 
-pub async fn add_collaborator(pool: &PgPool, repo_id: Uuid, user_id: Uuid, role: &str) -> Result<()> {
+pub async fn add_collaborator(
+    pool: &PgPool,
+    repo_id: Uuid,
+    user_id: Uuid,
+    role: &str,
+) -> Result<()> {
     sqlx::query(
         r#"
         INSERT INTO collaborators (repo_id, user_id, role) VALUES ($1, $2, $3)
@@ -1240,10 +1789,12 @@ pub async fn add_ssh_key(
 
 pub async fn list_ssh_keys(pool: &PgPool, user_id: Uuid) -> Result<Vec<SshKey>> {
     Ok(
-        sqlx::query_as::<_, SshKey>("SELECT * FROM ssh_keys WHERE user_id = $1 ORDER BY created_at")
-            .bind(user_id)
-            .fetch_all(pool)
-            .await?,
+        sqlx::query_as::<_, SshKey>(
+            "SELECT * FROM ssh_keys WHERE user_id = $1 ORDER BY created_at",
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?,
     )
 }
 
@@ -1350,9 +1901,11 @@ pub async fn username_by_email(pool: &PgPool, email: &str) -> Result<Option<Stri
 }
 
 pub async fn list_all_gpg_keys(pool: &PgPool) -> Result<Vec<GpgKey>> {
-    Ok(sqlx::query_as::<_, GpgKey>("SELECT * FROM gpg_keys ORDER BY created_at DESC")
-        .fetch_all(pool)
-        .await?)
+    Ok(
+        sqlx::query_as::<_, GpgKey>("SELECT * FROM gpg_keys ORDER BY created_at DESC")
+            .fetch_all(pool)
+            .await?,
+    )
 }
 
 pub async fn record_activity(
@@ -1376,7 +1929,17 @@ pub async fn record_activity(
     Ok(())
 }
 
-pub async fn latest_activity(pool: &PgPool, limit: i64) -> Result<Vec<(ActivityEvent, Option<User>, Option<Repository>, Option<String>)>> {
+pub async fn latest_activity(
+    pool: &PgPool,
+    limit: i64,
+) -> Result<
+    Vec<(
+        ActivityEvent,
+        Option<User>,
+        Option<Repository>,
+        Option<String>,
+    )>,
+> {
     let events = sqlx::query_as::<_, ActivityEvent>(
         "SELECT * FROM activity_events ORDER BY created_at DESC LIMIT $1",
     )
@@ -1390,7 +1953,14 @@ pub async fn latest_activity_for_user(
     pool: &PgPool,
     user_id: Uuid,
     limit: i64,
-) -> Result<Vec<(ActivityEvent, Option<User>, Option<Repository>, Option<String>)>> {
+) -> Result<
+    Vec<(
+        ActivityEvent,
+        Option<User>,
+        Option<Repository>,
+        Option<String>,
+    )>,
+> {
     let events = sqlx::query_as::<_, ActivityEvent>(
         "SELECT * FROM activity_events WHERE actor_id = $1 ORDER BY created_at DESC LIMIT $2",
     )
@@ -1404,7 +1974,14 @@ pub async fn latest_activity_for_user(
 async fn hydrate_activity(
     pool: &PgPool,
     events: Vec<ActivityEvent>,
-) -> Result<Vec<(ActivityEvent, Option<User>, Option<Repository>, Option<String>)>> {
+) -> Result<
+    Vec<(
+        ActivityEvent,
+        Option<User>,
+        Option<Repository>,
+        Option<String>,
+    )>,
+> {
     let mut out = Vec::new();
     for e in events {
         let actor = match e.actor_id {
@@ -1426,7 +2003,12 @@ async fn hydrate_activity(
     Ok(out)
 }
 
-pub async fn bump_commit_activity(pool: &PgPool, user_id: Uuid, day: NaiveDate, n: i32) -> Result<()> {
+pub async fn bump_commit_activity(
+    pool: &PgPool,
+    user_id: Uuid,
+    day: NaiveDate,
+    n: i32,
+) -> Result<()> {
     sqlx::query(
         r#"
         INSERT INTO commit_activity (user_id, day, count) VALUES ($1, $2, $3)
@@ -1455,7 +2037,11 @@ pub async fn commit_graph(pool: &PgPool, user_id: Uuid, days: i64) -> Result<Vec
     .await?)
 }
 
-pub async fn set_language_stats(pool: &PgPool, repo_id: Uuid, stats: serde_json::Value) -> Result<()> {
+pub async fn set_language_stats(
+    pool: &PgPool,
+    repo_id: Uuid,
+    stats: serde_json::Value,
+) -> Result<()> {
     sqlx::query(
         r#"
         INSERT INTO language_stats (repo_id, stats, updated_at) VALUES ($1, $2, now())
@@ -1604,7 +2190,10 @@ pub async fn create_pull(
     source: &str,
     target: &str,
 ) -> Result<PullRequest> {
-    create_pull_ex(pool, repo_id, author_id, number, title, body, source, target, None).await
+    create_pull_ex(
+        pool, repo_id, author_id, number, title, body, source, target, None,
+    )
+    .await
 }
 
 pub async fn create_pull_ex(
@@ -1637,7 +2226,11 @@ pub async fn create_pull_ex(
     .await?)
 }
 
-pub async fn list_pulls(pool: &PgPool, repo_id: Uuid, state: Option<&str>) -> Result<Vec<PullRequest>> {
+pub async fn list_pulls(
+    pool: &PgPool,
+    repo_id: Uuid,
+    state: Option<&str>,
+) -> Result<Vec<PullRequest>> {
     list_pulls_filtered(pool, repo_id, state, None, None).await
 }
 
@@ -1869,13 +2462,13 @@ pub async fn list_releases(pool: &PgPool, repo_id: Uuid) -> Result<Vec<Release>>
 }
 
 pub async fn get_release(pool: &PgPool, repo_id: Uuid, tag: &str) -> Result<Option<Release>> {
-    Ok(sqlx::query_as::<_, Release>(
-        "SELECT * FROM releases WHERE repo_id = $1 AND tag_name = $2",
+    Ok(
+        sqlx::query_as::<_, Release>("SELECT * FROM releases WHERE repo_id = $1 AND tag_name = $2")
+            .bind(repo_id)
+            .bind(tag)
+            .fetch_optional(pool)
+            .await?,
     )
-    .bind(repo_id)
-    .bind(tag)
-    .fetch_optional(pool)
-    .await?)
 }
 
 pub async fn add_release_asset(
@@ -1920,12 +2513,12 @@ pub async fn get_asset(pool: &PgPool, id: Uuid) -> Result<Option<ReleaseAsset>> 
 }
 
 pub async fn delete_release_asset(pool: &PgPool, id: Uuid) -> Result<Option<ReleaseAsset>> {
-    Ok(sqlx::query_as::<_, ReleaseAsset>(
-        "DELETE FROM release_assets WHERE id = $1 RETURNING *",
+    Ok(
+        sqlx::query_as::<_, ReleaseAsset>("DELETE FROM release_assets WHERE id = $1 RETURNING *")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?,
     )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?)
 }
 
 pub async fn rename_release_tag(
@@ -1970,34 +2563,36 @@ pub async fn rewrite_asset_paths_for_tag(
     Ok(())
 }
 
-
 // ── stars / watches / forks ──────────────────────────────────────────────────
 
 pub async fn toggle_star(pool: &PgPool, repo_id: Uuid, user_id: Uuid) -> Result<bool> {
-    let existing: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT user_id FROM repo_stars WHERE repo_id = $1 AND user_id = $2",
-    )
-    .bind(repo_id)
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
+    let existing: Option<(Uuid,)> =
+        sqlx::query_as("SELECT user_id FROM repo_stars WHERE repo_id = $1 AND user_id = $2")
+            .bind(repo_id)
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
     if existing.is_some() {
         sqlx::query("DELETE FROM repo_stars WHERE repo_id = $1 AND user_id = $2")
             .bind(repo_id)
             .bind(user_id)
             .execute(pool)
             .await?;
-        sqlx::query("UPDATE repositories SET stars_count = GREATEST(stars_count - 1, 0) WHERE id = $1")
-            .bind(repo_id)
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "UPDATE repositories SET stars_count = GREATEST(stars_count - 1, 0) WHERE id = $1",
+        )
+        .bind(repo_id)
+        .execute(pool)
+        .await?;
         Ok(false)
     } else {
-        sqlx::query("INSERT INTO repo_stars (repo_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
-            .bind(repo_id)
-            .bind(user_id)
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "INSERT INTO repo_stars (repo_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        )
+        .bind(repo_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
         sqlx::query("UPDATE repositories SET stars_count = stars_count + 1 WHERE id = $1")
             .bind(repo_id)
             .execute(pool)
@@ -2007,41 +2602,43 @@ pub async fn toggle_star(pool: &PgPool, repo_id: Uuid, user_id: Uuid) -> Result<
 }
 
 pub async fn is_starred(pool: &PgPool, repo_id: Uuid, user_id: Uuid) -> Result<bool> {
-    let row: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT user_id FROM repo_stars WHERE repo_id = $1 AND user_id = $2",
-    )
-    .bind(repo_id)
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(Uuid,)> =
+        sqlx::query_as("SELECT user_id FROM repo_stars WHERE repo_id = $1 AND user_id = $2")
+            .bind(repo_id)
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
     Ok(row.is_some())
 }
 
 pub async fn toggle_watch(pool: &PgPool, repo_id: Uuid, user_id: Uuid) -> Result<bool> {
-    let existing: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT user_id FROM repo_watches WHERE repo_id = $1 AND user_id = $2",
-    )
-    .bind(repo_id)
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
+    let existing: Option<(Uuid,)> =
+        sqlx::query_as("SELECT user_id FROM repo_watches WHERE repo_id = $1 AND user_id = $2")
+            .bind(repo_id)
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
     if existing.is_some() {
         sqlx::query("DELETE FROM repo_watches WHERE repo_id = $1 AND user_id = $2")
             .bind(repo_id)
             .bind(user_id)
             .execute(pool)
             .await?;
-        sqlx::query("UPDATE repositories SET watches_count = GREATEST(watches_count - 1, 0) WHERE id = $1")
-            .bind(repo_id)
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "UPDATE repositories SET watches_count = GREATEST(watches_count - 1, 0) WHERE id = $1",
+        )
+        .bind(repo_id)
+        .execute(pool)
+        .await?;
         Ok(false)
     } else {
-        sqlx::query("INSERT INTO repo_watches (repo_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
-            .bind(repo_id)
-            .bind(user_id)
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "INSERT INTO repo_watches (repo_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        )
+        .bind(repo_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
         sqlx::query("UPDATE repositories SET watches_count = watches_count + 1 WHERE id = $1")
             .bind(repo_id)
             .execute(pool)
@@ -2051,13 +2648,12 @@ pub async fn toggle_watch(pool: &PgPool, repo_id: Uuid, user_id: Uuid) -> Result
 }
 
 pub async fn is_watching(pool: &PgPool, repo_id: Uuid, user_id: Uuid) -> Result<bool> {
-    let row: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT user_id FROM repo_watches WHERE repo_id = $1 AND user_id = $2",
-    )
-    .bind(repo_id)
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(Uuid,)> =
+        sqlx::query_as("SELECT user_id FROM repo_watches WHERE repo_id = $1 AND user_id = $2")
+            .bind(repo_id)
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
     Ok(row.is_some())
 }
 
@@ -2150,7 +2746,14 @@ pub async fn latest_activity_for_watched_repos(
     pool: &PgPool,
     user_id: Uuid,
     limit: i64,
-) -> Result<Vec<(ActivityEvent, Option<User>, Option<Repository>, Option<String>)>> {
+) -> Result<
+    Vec<(
+        ActivityEvent,
+        Option<User>,
+        Option<Repository>,
+        Option<String>,
+    )>,
+> {
     let events = sqlx::query_as::<_, ActivityEvent>(
         r#"
         SELECT ae.*
@@ -2207,7 +2810,11 @@ pub async fn create_fork(
     Ok(repo)
 }
 
-pub async fn get_fork_of_user(pool: &PgPool, fork_of_id: Uuid, owner_id: Uuid) -> Result<Option<Repository>> {
+pub async fn get_fork_of_user(
+    pool: &PgPool,
+    fork_of_id: Uuid,
+    owner_id: Uuid,
+) -> Result<Option<Repository>> {
     Ok(sqlx::query_as::<_, Repository>(
         "SELECT * FROM repositories WHERE fork_of_id = $1 AND owner_id = $2",
     )
@@ -2281,7 +2888,10 @@ pub async fn list_reaction_counts(
     .bind(viewer)
     .fetch_all(pool)
     .await?;
-    Ok(rows.into_iter().map(|r| (r.emoji, r.count, r.mine)).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.emoji, r.count, r.mine))
+        .collect())
 }
 
 // ── branch rules ─────────────────────────────────────────────────────────────
@@ -2406,13 +3016,12 @@ pub async fn delete_user_email(pool: &PgPool, id: Uuid, user_id: Uuid) -> Result
 
 pub async fn set_primary_email(pool: &PgPool, user_id: Uuid, email_id: Uuid) -> Result<()> {
     let mut tx = pool.begin().await?;
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT email FROM user_emails WHERE id = $1 AND user_id = $2",
-    )
-    .bind(email_id)
-    .bind(user_id)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT email FROM user_emails WHERE id = $1 AND user_id = $2")
+            .bind(email_id)
+            .bind(user_id)
+            .fetch_optional(&mut *tx)
+            .await?;
     let Some((email,)) = row else {
         anyhow::bail!("email not found");
     };
@@ -2527,10 +3136,12 @@ pub async fn delete_user(pool: &PgPool, id: Uuid) -> Result<()> {
 }
 
 pub async fn get_user_mfa(pool: &PgPool, user_id: Uuid) -> Result<Option<UserMfa>> {
-    Ok(sqlx::query_as::<_, UserMfa>("SELECT * FROM user_mfa WHERE user_id = $1")
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await?)
+    Ok(
+        sqlx::query_as::<_, UserMfa>("SELECT * FROM user_mfa WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?,
+    )
 }
 
 pub async fn mfa_is_enabled(pool: &PgPool, user_id: Uuid) -> Result<bool> {
@@ -2543,7 +3154,11 @@ pub async fn mfa_is_enabled(pool: &PgPool, user_id: Uuid) -> Result<bool> {
     Ok(row.is_some())
 }
 
-pub async fn mfa_start_enroll(pool: &PgPool, user_id: Uuid, pending_secret: &str) -> Result<UserMfa> {
+pub async fn mfa_start_enroll(
+    pool: &PgPool,
+    user_id: Uuid,
+    pending_secret: &str,
+) -> Result<UserMfa> {
     Ok(sqlx::query_as::<_, UserMfa>(
         r#"
         INSERT INTO user_mfa (user_id, pending_secret, enabled, totp_secret, recovery_code_hashes, updated_at)
@@ -2661,7 +3276,9 @@ pub async fn delete_mfa_pending_for_user(pool: &PgPool, user_id: Uuid) -> Result
 }
 
 pub async fn export_user_data(pool: &PgPool, user_id: Uuid) -> Result<serde_json::Value> {
-    let user = get_user_by_id(pool, user_id).await?.ok_or_else(|| anyhow::anyhow!("missing"))?;
+    let user = get_user_by_id(pool, user_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("missing"))?;
     let emails = list_user_emails(pool, user_id).await?;
     let keys = sqlx::query_as::<_, SshKey>("SELECT * FROM ssh_keys WHERE user_id = $1")
         .bind(user_id)
@@ -2753,12 +3370,12 @@ pub async fn lfs_object_size(pool: &PgPool, oid: &str) -> Result<Option<i64>> {
 // ── repo mirrors ─────────────────────────────────────────────────────────────
 
 pub async fn get_repo_mirror(pool: &PgPool, repo_id: Uuid) -> Result<Option<RepoMirror>> {
-    Ok(sqlx::query_as::<_, RepoMirror>(
-        "SELECT * FROM repo_mirrors WHERE repo_id = $1",
+    Ok(
+        sqlx::query_as::<_, RepoMirror>("SELECT * FROM repo_mirrors WHERE repo_id = $1")
+            .bind(repo_id)
+            .fetch_optional(pool)
+            .await?,
     )
-    .bind(repo_id)
-    .fetch_optional(pool)
-    .await?)
 }
 
 pub async fn upsert_repo_mirror(
@@ -2901,13 +3518,13 @@ pub async fn list_active_webhooks_for_event(
 }
 
 pub async fn get_webhook(pool: &PgPool, id: Uuid, repo_id: Uuid) -> Result<Option<Webhook>> {
-    Ok(sqlx::query_as::<_, Webhook>(
-        "SELECT * FROM webhooks WHERE id = $1 AND repo_id = $2",
+    Ok(
+        sqlx::query_as::<_, Webhook>("SELECT * FROM webhooks WHERE id = $1 AND repo_id = $2")
+            .bind(id)
+            .bind(repo_id)
+            .fetch_optional(pool)
+            .await?,
     )
-    .bind(id)
-    .bind(repo_id)
-    .fetch_optional(pool)
-    .await?)
 }
 
 pub async fn create_webhook(
@@ -3090,11 +3707,10 @@ pub async fn notify_users(
 }
 
 pub async fn list_repo_watcher_ids(pool: &PgPool, repo_id: Uuid) -> Result<Vec<Uuid>> {
-    let rows: Vec<(Uuid,)> =
-        sqlx::query_as("SELECT user_id FROM repo_watches WHERE repo_id = $1")
-            .bind(repo_id)
-            .fetch_all(pool)
-            .await?;
+    let rows: Vec<(Uuid,)> = sqlx::query_as("SELECT user_id FROM repo_watches WHERE repo_id = $1")
+        .bind(repo_id)
+        .fetch_all(pool)
+        .await?;
     Ok(rows.into_iter().map(|r| r.0).collect())
 }
 
@@ -3266,12 +3882,12 @@ impl From<PullLabelRow> for (Uuid, Label) {
 }
 
 pub async fn list_labels(pool: &PgPool, repo_id: Uuid) -> Result<Vec<Label>> {
-    Ok(sqlx::query_as::<_, Label>(
-        "SELECT * FROM labels WHERE repo_id = $1 ORDER BY lower(name)",
+    Ok(
+        sqlx::query_as::<_, Label>("SELECT * FROM labels WHERE repo_id = $1 ORDER BY lower(name)")
+            .bind(repo_id)
+            .fetch_all(pool)
+            .await?,
     )
-    .bind(repo_id)
-    .fetch_all(pool)
-    .await?)
 }
 
 pub async fn get_label(pool: &PgPool, repo_id: Uuid, id: Uuid) -> Result<Option<Label>> {
@@ -3565,12 +4181,12 @@ pub async fn get_milestones_by_ids(pool: &PgPool, ids: &[Uuid]) -> Result<Vec<Mi
     if ids.is_empty() {
         return Ok(Vec::new());
     }
-    Ok(sqlx::query_as::<_, Milestone>(
-        "SELECT * FROM milestones WHERE id = ANY($1)",
+    Ok(
+        sqlx::query_as::<_, Milestone>("SELECT * FROM milestones WHERE id = ANY($1)")
+            .bind(ids)
+            .fetch_all(pool)
+            .await?,
     )
-    .bind(ids)
-    .fetch_all(pool)
-    .await?)
 }
 
 pub async fn filter_repo_label_ids(
@@ -3581,12 +4197,11 @@ pub async fn filter_repo_label_ids(
     if label_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let rows: Vec<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM labels WHERE repo_id = $1 AND id = ANY($2)",
-    )
-    .bind(repo_id)
-    .bind(label_ids)
-    .fetch_all(pool)
-    .await?;
+    let rows: Vec<(Uuid,)> =
+        sqlx::query_as("SELECT id FROM labels WHERE repo_id = $1 AND id = ANY($2)")
+            .bind(repo_id)
+            .bind(label_ids)
+            .fetch_all(pool)
+            .await?;
     Ok(rows.into_iter().map(|r| r.0).collect())
 }

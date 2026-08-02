@@ -8,6 +8,9 @@ pub struct User {
     pub id: Uuid,
     pub oidc_sub: String,
     pub username: String,
+    /// `user` for a login-capable account, `organization` for a repository
+    /// namespace backed by the same globally unique username space.
+    pub account_type: String,
     pub display_name: String,
     pub email: String,
     pub bio: String,
@@ -24,12 +27,99 @@ pub struct User {
 }
 
 impl User {
+    pub fn is_organization(&self) -> bool {
+        self.account_type == "organization"
+    }
+
+    pub fn is_user(&self) -> bool {
+        !self.is_organization()
+    }
+
     pub fn theme_pref(&self) -> &str {
         match self.theme.as_str() {
             "light" | "dark" => self.theme.as_str(),
             _ => "system",
         }
     }
+}
+
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct Organization {
+    pub id: Uuid,
+    pub description: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct OrganizationMembership {
+    pub organization_id: Uuid,
+    pub user_id: Uuid,
+    pub role: String,
+    pub visibility: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct OrganizationMember {
+    pub organization_id: Uuid,
+    pub user_id: Uuid,
+    pub role: String,
+    pub visibility: String,
+    pub membership_created_at: DateTime<Utc>,
+    pub membership_updated_at: DateTime<Utc>,
+    pub oidc_sub: String,
+    pub username: String,
+    pub account_type: String,
+    pub display_name: String,
+    pub email: String,
+    pub bio: String,
+    pub avatar_path: Option<String>,
+    pub avatar_url: Option<String>,
+    pub is_site_admin: bool,
+    pub is_suspended: bool,
+    pub show_email: bool,
+    pub vigilant_mode: bool,
+    pub theme: String,
+    pub user_created_at: DateTime<Utc>,
+    pub user_updated_at: DateTime<Utc>,
+}
+
+impl OrganizationMember {
+    pub fn user(&self) -> User {
+        User {
+            id: self.user_id,
+            oidc_sub: self.oidc_sub.clone(),
+            username: self.username.clone(),
+            account_type: self.account_type.clone(),
+            display_name: self.display_name.clone(),
+            email: self.email.clone(),
+            bio: self.bio.clone(),
+            avatar_path: self.avatar_path.clone(),
+            avatar_url: self.avatar_url.clone(),
+            is_site_admin: self.is_site_admin,
+            is_suspended: self.is_suspended,
+            show_email: self.show_email,
+            vigilant_mode: self.vigilant_mode,
+            theme: self.theme.clone(),
+            created_at: self.user_created_at,
+            updated_at: self.user_updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct OrganizationInvitation {
+    pub id: Uuid,
+    pub organization_id: Uuid,
+    pub invitee_id: Uuid,
+    pub inviter_id: Uuid,
+    pub role: String,
+    pub status: String,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+    pub responded_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, FromRow)]

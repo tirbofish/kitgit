@@ -2,20 +2,20 @@ use crate::auth::{
     self, clear_mfa_pending_cookie, clear_session_cookie, current_user, mfa_pending_cookie_header,
     mfa_pending_from_headers, session_cookie_header, AuthState, LoginOutcome,
 };
-use crate::db::models::{Access, Comment, Repository, User};
+use crate::db::models::{Access, Comment, OrganizationMember, Repository, User};
 use crate::db::queries;
 use crate::git;
 use crate::git::ssh::fingerprint_ssh_pubkey;
 use crate::highlight::highlight;
-use crate::markdown::{MarkdownRepoBase, parent_dir, render_markdown, render_markdown_in_repo};
+use crate::markdown::{parent_dir, render_markdown, render_markdown_in_repo, MarkdownRepoBase};
 use crate::og;
 use crate::state::AppState;
 use crate::web::templates::*;
+use axum::body::Body;
 use axum::extract::{Form, Multipart, Path, Query, State};
 use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE, LOCATION, SET_COOKIE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
-use axum::body::Body;
 use serde::Deserialize;
 use std::path::PathBuf;
 use uuid::Uuid;
@@ -276,7 +276,9 @@ fn initials_avatar_svg(user: &User) -> Vec<u8> {
     }
     // Deterministic muted tone from user id.
     let bytes = user.id.as_bytes();
-    let h = bytes.iter().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(*b as u32));
+    let h = bytes
+        .iter()
+        .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(*b as u32));
     let r = 40 + (h % 80) as u8;
     let g = 40 + ((h >> 8) % 80) as u8;
     let b = 40 + ((h >> 16) % 80) as u8;
@@ -312,10 +314,7 @@ fn language_stat_views(stats: serde_json::Value) -> Vec<LanguageStatView> {
         .iter()
         .map(|(name, meta)| LanguageStatView {
             name: name.clone(),
-            percent: meta
-                .get("percent")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0),
+            percent: meta.get("percent").and_then(|v| v.as_f64()).unwrap_or(0.0),
             color: meta
                 .get("color")
                 .and_then(|v| v.as_str())
@@ -411,8 +410,18 @@ fn classify_commit_ref(before: &str) -> CommitRefKind {
         return CommitRefKind::Issue;
     }
     for kw in [
-        "fix", "fixes", "fixed", "fixing", "close", "closes", "closed", "closing", "resolve",
-        "resolves", "resolved", "resolving",
+        "fix",
+        "fixes",
+        "fixed",
+        "fixing",
+        "close",
+        "closes",
+        "closed",
+        "closing",
+        "resolve",
+        "resolves",
+        "resolved",
+        "resolving",
     ] {
         if trimmed == kw || trimmed.ends_with(&format!(" {kw}")) {
             return CommitRefKind::Closing;
@@ -741,6 +750,19 @@ fn valid_repo_name(name: &str) -> bool {
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
 }
 
+fn valid_namespace_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 39
+        && name
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+            .unwrap_or(false)
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+}
+
 pub async fn require_login(auth: &AuthState, headers: &HeaderMap) -> AppResult<User> {
     current_user(auth, headers)
         .await?
@@ -758,7 +780,8 @@ pub async fn load_repo_context(
         .await?
         .ok_or_else(AppError::not_found)?;
     let viewer = current_user(&state.auth, headers).await?;
-    let access = queries::repo_access(&state.pool, &repository, viewer.as_ref().map(|u| u.id)).await?;
+    let access =
+        queries::repo_access(&state.pool, &repository, viewer.as_ref().map(|u| u.id)).await?;
     if !access.can_read() {
         return Err(AppError::not_found());
     }
@@ -867,7 +890,10 @@ async fn comment_views(
 }
 
 fn checkbox(v: &Option<String>) -> bool {
-    matches!(v.as_deref(), Some("on") | Some("true") | Some("1") | Some("yes"))
+    matches!(
+        v.as_deref(),
+        Some("on") | Some("true") | Some("1") | Some("yes")
+    )
 }
 
 /// Split an activity summary into prefix text plus an optional issue/PR link.
@@ -893,10 +919,7 @@ fn activity_summary_parts(
             format!("/{owner}/{repo}/issues/{number}"),
         ),
         "pull.open" | "pull.comment" | "pull.merge" => (
-            vec![
-                format!("pull #{number}"),
-                format!("pull request #{number}"),
-            ],
+            vec![format!("pull #{number}"), format!("pull request #{number}")],
             format!("/{owner}/{repo}/pulls/{number}"),
         ),
         _ => return (summary.to_string(), None, None),
@@ -953,7 +976,9 @@ pub async fn home(
     headers: HeaderMap,
 ) -> AppResult<impl IntoResponse> {
     let viewer = current_user(&state.auth, &headers).await?;
-    let motd = queries::get_setting(&state.pool, "motd").await.unwrap_or_default();
+    let motd = queries::get_setting(&state.pool, "motd")
+        .await
+        .unwrap_or_default();
 
     // Logged-out: branded landing only (no activity / repos).
     let Some(user) = viewer else {
@@ -1230,7 +1255,10 @@ pub async fn auth_mfa_submit(
             tracing::warn!("mfa challenge failed: {e:#}");
             let msg = crate::mfa::sanitize_user_error(&e.to_string());
             if msg.contains("expired") {
-                return Ok(redirect_with_cookie("/auth/login", clear_mfa_pending_cookie()));
+                return Ok(redirect_with_cookie(
+                    "/auth/login",
+                    clear_mfa_pending_cookie(),
+                ));
             }
             Ok(MfaChallengeTemplate {
                 viewer: None,
@@ -1397,10 +1425,7 @@ pub async fn auth_callback(
     Ok(redirect_with_cookie("/", cookie))
 }
 
-pub async fn auth_logout(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> AppResult<Response> {
+pub async fn auth_logout(State(state): State<AppState>, headers: HeaderMap) -> AppResult<Response> {
     if let Ok(Some(user)) = current_user(&state.auth, &headers).await {
         record_audit(
             &state,
@@ -1842,6 +1867,508 @@ pub async fn notifications_mark_all_read(
     Ok(redirect_see_other("/notifications"))
 }
 
+// ── organizations ───────────────────────────────────────────────────────────
+
+async fn organization_member_views(
+    state: &AppState,
+    organization_id: Uuid,
+    include_private: bool,
+) -> AppResult<Vec<OrganizationMemberView>> {
+    Ok(
+        queries::list_organization_members(&state.pool, organization_id, include_private)
+            .await?
+            .into_iter()
+            .map(|member: OrganizationMember| {
+                let user = member.user();
+                OrganizationMemberView {
+                    avatar_url: avatar_url_for(&user),
+                    user,
+                    role: member.role,
+                    visibility: member.visibility,
+                }
+            })
+            .collect(),
+    )
+}
+
+async fn organization_for_viewer(
+    state: &AppState,
+    slug: &str,
+    headers: &HeaderMap,
+) -> AppResult<(User, User, bool, bool)> {
+    let (organization, _profile) = queries::get_organization_by_username(&state.pool, slug)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    let viewer = require_login(&state.auth, headers).await?;
+    let membership =
+        queries::organization_membership(&state.pool, organization.id, viewer.id).await?;
+    let is_owner = membership
+        .as_ref()
+        .map(|m| m.role == "owner")
+        .unwrap_or(false);
+    Ok((organization, viewer, membership.is_some(), is_owner))
+}
+
+#[derive(Deserialize)]
+pub struct OrganizationForm {
+    pub name: String,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+}
+
+pub async fn organization_new_form(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<impl IntoResponse> {
+    let viewer = require_login(&state.auth, &headers).await?;
+    Ok(OrganizationNewTemplate {
+        viewer: Some(viewer),
+        error: None,
+    })
+}
+
+pub async fn organization_new(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<OrganizationForm>,
+) -> AppResult<Response> {
+    let viewer = require_login(&state.auth, &headers).await?;
+    let slug = form.name.trim().to_ascii_lowercase();
+    if !valid_namespace_name(&slug) {
+        return Ok(OrganizationNewTemplate {
+            viewer: Some(viewer),
+            error: Some("invalid organization name".into()),
+        }
+        .into_response());
+    }
+    if queries::get_namespace_by_username(&state.pool, &slug)
+        .await?
+        .is_some()
+    {
+        return Ok(OrganizationNewTemplate {
+            viewer: Some(viewer),
+            error: Some("organization name is already taken".into()),
+        }
+        .into_response());
+    }
+    let display_name = form.display_name.unwrap_or_default().trim().to_string();
+    let display_name = if display_name.is_empty() {
+        slug.clone()
+    } else {
+        display_name
+    };
+    let organization = queries::create_organization(
+        &state.pool,
+        &slug,
+        &display_name,
+        form.description.as_deref().unwrap_or("").trim(),
+        viewer.id,
+    )
+    .await
+    .map_err(|e| AppError::bad(format!("could not create organization: {e}")))?;
+    Ok(redirect_see_other(&format!("/{}", organization.username)))
+}
+
+#[derive(Deserialize)]
+pub struct OrganizationSettingsForm {
+    pub slug: String,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+}
+
+pub async fn organization_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(username): Path<String>,
+) -> AppResult<impl IntoResponse> {
+    let (organization, profile) = queries::get_organization_by_username(&state.pool, &username)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    let viewer = current_user(&state.auth, &headers).await?;
+    let viewer_id = viewer.as_ref().map(|u| u.id);
+    let membership = if let Some(id) = viewer_id {
+        queries::organization_membership(&state.pool, organization.id, id).await?
+    } else {
+        None
+    };
+    let repos = queries::list_user_repos(&state.pool, organization.id, viewer_id).await?;
+    let members = organization_member_views(&state, organization.id, membership.is_some()).await?;
+    Ok(OrganizationTemplate {
+        viewer,
+        organization,
+        description: profile.description,
+        repos,
+        members,
+        can_manage: membership
+            .as_ref()
+            .map(|m| m.role == "owner")
+            .unwrap_or(false),
+        is_member: membership.is_some(),
+        is_owner: membership
+            .as_ref()
+            .map(|m| m.role == "owner")
+            .unwrap_or(false),
+        member_visibility: membership
+            .as_ref()
+            .map(|m| m.visibility.clone())
+            .unwrap_or_else(|| "private".into()),
+    })
+}
+
+pub async fn organization_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(organization): Path<String>,
+) -> AppResult<impl IntoResponse> {
+    let (org, viewer, _member, is_owner) =
+        organization_for_viewer(&state, &organization, &headers).await?;
+    if !is_owner {
+        return Err(AppError::forbidden());
+    }
+    let (_, profile) = queries::get_organization(&state.pool, org.id)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    Ok(OrganizationSettingsTemplate {
+        viewer: Some(viewer),
+        organization: org.clone(),
+        description: profile.description,
+        members: organization_member_views(&state, org.id, true).await?,
+        invitations: queries::list_organization_invitations(&state.pool, org.id).await?,
+        error: None,
+    })
+}
+
+pub async fn organization_settings_save(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(organization): Path<String>,
+    Form(form): Form<OrganizationSettingsForm>,
+) -> AppResult<Response> {
+    let (org, _viewer, _member, is_owner) =
+        organization_for_viewer(&state, &organization, &headers).await?;
+    if !is_owner {
+        return Err(AppError::forbidden());
+    }
+    let slug = form.slug.trim().to_ascii_lowercase();
+    if !valid_namespace_name(&slug) {
+        return Err(AppError::bad("invalid organization name"));
+    }
+    if slug != org.username {
+        if queries::get_namespace_by_username(&state.pool, &slug)
+            .await?
+            .is_some()
+        {
+            return Err(AppError::bad("organization name is already taken"));
+        }
+        let old_path = state.config.repos_dir().join(&org.username);
+        let new_path = state.config.repos_dir().join(&slug);
+        if new_path.exists() {
+            return Err(AppError::bad("cannot rename: target path exists"));
+        }
+        let mut moved = false;
+        if old_path.exists() {
+            std::fs::rename(&old_path, &new_path)
+                .map_err(|e| AppError::internal(format!("failed to move repositories: {e}")))?;
+            moved = true;
+        }
+        if let Err(e) = queries::rename_namespace(&state.pool, org.id, &slug).await {
+            if moved {
+                let _ = std::fs::rename(&new_path, &old_path);
+            }
+            return Err(AppError::bad(format!("could not rename organization: {e}")));
+        }
+    }
+    let display_name = form.display_name.unwrap_or_default().trim().to_string();
+    let display_name = if display_name.is_empty() {
+        slug.clone()
+    } else {
+        display_name
+    };
+    queries::update_organization(
+        &state.pool,
+        org.id,
+        &display_name,
+        form.description.as_deref().unwrap_or("").trim(),
+    )
+    .await?;
+    Ok(redirect_see_other(&format!(
+        "/organizations/{slug}/settings"
+    )))
+}
+
+#[derive(Deserialize)]
+pub struct OrganizationInviteForm {
+    pub username: String,
+    pub role: Option<String>,
+}
+
+pub async fn organization_invite(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(organization): Path<String>,
+    Form(form): Form<OrganizationInviteForm>,
+) -> AppResult<Response> {
+    let (org, viewer, _member, is_owner) =
+        organization_for_viewer(&state, &organization, &headers).await?;
+    if !is_owner {
+        return Err(AppError::forbidden());
+    }
+    let invitee = queries::get_user_by_username(&state.pool, form.username.trim())
+        .await?
+        .ok_or_else(|| AppError::bad("user not found"))?;
+    if invitee.id == viewer.id {
+        return Err(AppError::bad("you cannot invite yourself"));
+    }
+    if queries::organization_membership(&state.pool, org.id, invitee.id)
+        .await?
+        .is_some()
+    {
+        return Err(AppError::bad("user is already a member"));
+    }
+    let role = if form.role.as_deref() == Some("owner") {
+        "owner"
+    } else {
+        "member"
+    };
+    let invitation =
+        queries::create_organization_invitation(&state.pool, org.id, invitee.id, viewer.id, role)
+            .await
+            .map_err(|e| AppError::bad(format!("could not create invitation: {e}")))?;
+    queries::create_notification(
+        &state.pool,
+        invitee.id,
+        "organization.invite",
+        &format!("Invitation to {}", org.username),
+        &format!("{} invited you as an {}", viewer.username, role),
+        &format!("/organizations/invitations/{}", invitation.id),
+        None,
+    )
+    .await?;
+    Ok(redirect_see_other(&format!(
+        "/organizations/{organization}/settings"
+    )))
+}
+
+pub async fn organization_invitation_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> AppResult<impl IntoResponse> {
+    let viewer = require_login(&state.auth, &headers).await?;
+    let invitation = queries::get_organization_invitation(&state.pool, id)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    if invitation.invitee_id != viewer.id {
+        return Err(AppError::forbidden());
+    }
+    let organization = queries::get_user_by_id_any(&state.pool, invitation.organization_id)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    let inviter = queries::get_user_by_id(&state.pool, invitation.inviter_id)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    let error = if invitation.status != "pending" || invitation.expires_at <= chrono::Utc::now() {
+        Some("this invitation is no longer active".into())
+    } else {
+        None
+    };
+    Ok(OrganizationInvitationTemplate {
+        viewer: Some(viewer),
+        invitation,
+        organization,
+        inviter,
+        error,
+    })
+}
+
+#[derive(Deserialize)]
+pub struct OrganizationInvitationActionForm {
+    pub action: String,
+}
+
+pub async fn organization_invitation_respond(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Form(form): Form<OrganizationInvitationActionForm>,
+) -> AppResult<Response> {
+    let viewer = require_login(&state.auth, &headers).await?;
+    let accepted = form.action.trim() == "accept";
+    let invitation =
+        queries::respond_to_organization_invitation(&state.pool, id, viewer.id, accepted)
+            .await?
+            .ok_or_else(|| AppError::bad("invitation is no longer active"))?;
+    if accepted {
+        let org = queries::get_user_by_id_any(&state.pool, invitation.organization_id)
+            .await?
+            .ok_or_else(AppError::not_found)?;
+        Ok(redirect_see_other(&format!("/{}", org.username)))
+    } else {
+        Ok(redirect_see_other("/notifications"))
+    }
+}
+
+pub async fn organization_invitation_cancel(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((organization, id)): Path<(String, Uuid)>,
+) -> AppResult<Response> {
+    let (org, _viewer, _member, is_owner) =
+        organization_for_viewer(&state, &organization, &headers).await?;
+    if !is_owner {
+        return Err(AppError::forbidden());
+    }
+    queries::cancel_organization_invitation(&state.pool, id, org.id).await?;
+    Ok(redirect_see_other(&format!(
+        "/organizations/{organization}/settings"
+    )))
+}
+
+#[derive(Deserialize)]
+pub struct OrganizationRoleForm {
+    pub role: String,
+}
+
+#[derive(Deserialize)]
+pub struct VisibilityForm {
+    pub visibility: String,
+}
+
+pub async fn organization_member_role(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((organization, user_id)): Path<(String, Uuid)>,
+    Form(form): Form<OrganizationRoleForm>,
+) -> AppResult<Response> {
+    let (org, viewer, _member, is_owner) =
+        organization_for_viewer(&state, &organization, &headers).await?;
+    if !is_owner {
+        return Err(AppError::forbidden());
+    }
+    let current = queries::organization_membership(&state.pool, org.id, user_id)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    let role = if form.role == "owner" {
+        "owner"
+    } else {
+        "member"
+    };
+    if current.role == "owner"
+        && role == "member"
+        && queries::count_organization_owners(&state.pool, org.id).await? <= 1
+    {
+        return Err(AppError::bad("organization must keep an owner"));
+    }
+    queries::add_organization_membership(&state.pool, org.id, user_id, role).await?;
+    let _ = viewer;
+    Ok(redirect_see_other(&format!(
+        "/organizations/{organization}/settings"
+    )))
+}
+
+pub async fn organization_member_remove(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((organization, user_id)): Path<(String, Uuid)>,
+) -> AppResult<Response> {
+    let (org, viewer, _member, is_owner) =
+        organization_for_viewer(&state, &organization, &headers).await?;
+    if !is_owner {
+        return Err(AppError::forbidden());
+    }
+    let current = queries::organization_membership(&state.pool, org.id, user_id)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    if current.role == "owner"
+        && queries::count_organization_owners(&state.pool, org.id).await? <= 1
+    {
+        return Err(AppError::bad("organization must keep an owner"));
+    }
+    queries::remove_organization_membership(&state.pool, org.id, user_id).await?;
+    let _ = viewer;
+    Ok(redirect_see_other(&format!(
+        "/organizations/{organization}/settings"
+    )))
+}
+
+pub async fn organization_membership_visibility(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((organization, user_id)): Path<(String, Uuid)>,
+    Form(form): Form<VisibilityForm>,
+) -> AppResult<Response> {
+    let (org, viewer, member, _is_owner) =
+        organization_for_viewer(&state, &organization, &headers).await?;
+    if !member || viewer.id != user_id {
+        return Err(AppError::forbidden());
+    }
+    let visibility = if form.visibility == "public" {
+        "public"
+    } else {
+        "private"
+    };
+    queries::update_membership_visibility(&state.pool, org.id, user_id, visibility).await?;
+    Ok(redirect_see_other(&format!(
+        "/organizations/{organization}"
+    )))
+}
+
+pub async fn organization_leave(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(organization): Path<String>,
+) -> AppResult<Response> {
+    let (org, viewer, member, _is_owner) =
+        organization_for_viewer(&state, &organization, &headers).await?;
+    if !member {
+        return Err(AppError::bad("you are not a member"));
+    }
+    let current = queries::organization_membership(&state.pool, org.id, viewer.id)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    if current.role == "owner"
+        && queries::count_organization_owners(&state.pool, org.id).await? <= 1
+    {
+        return Err(AppError::bad("organization must keep an owner"));
+    }
+    queries::remove_organization_membership(&state.pool, org.id, viewer.id).await?;
+    Ok(redirect_see_other("/"))
+}
+
+#[derive(Deserialize)]
+pub struct OrganizationDeleteForm {
+    pub confirm: String,
+}
+
+pub async fn organization_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(organization): Path<String>,
+    Form(form): Form<OrganizationDeleteForm>,
+) -> AppResult<Response> {
+    let (org, _viewer, _member, is_owner) =
+        organization_for_viewer(&state, &organization, &headers).await?;
+    if !is_owner {
+        return Err(AppError::forbidden());
+    }
+    if form.confirm.trim() != org.username {
+        return Err(AppError::bad(
+            "type the organization slug to confirm delete",
+        ));
+    }
+    if queries::organization_repo_count(&state.pool, org.id).await? > 0 {
+        return Err(AppError::bad("transfer or delete all repositories first"));
+    }
+    let root = state.config.repos_dir().join(&org.username);
+    if root.exists() {
+        std::fs::remove_dir_all(&root).map_err(|e| {
+            AppError::internal(format!("could not remove organization repositories: {e}"))
+        })?;
+    }
+    queries::delete_organization(&state.pool, org.id).await?;
+    Ok(redirect_see_other("/"))
+}
+
 // ── new repo ─────────────────────────────────────────────────────────────────
 
 pub async fn new_repo_form(
@@ -1849,8 +2376,11 @@ pub async fn new_repo_form(
     headers: HeaderMap,
 ) -> AppResult<impl IntoResponse> {
     let viewer = require_login(&state.auth, &headers).await?;
+    let organizations = queries::list_owned_organizations(&state.pool, viewer.id).await?;
     Ok(NewRepoTemplate {
+        personal_username: viewer.username.clone(),
         viewer: Some(viewer),
+        organizations,
         error: None,
     })
 }
@@ -1858,6 +2388,7 @@ pub async fn new_repo_form(
 #[derive(Deserialize)]
 pub struct NewRepoForm {
     pub name: String,
+    pub owner: Option<String>,
     pub description: Option<String>,
     pub visibility: Option<String>,
 }
@@ -1868,6 +2399,27 @@ pub async fn new_repo(
     Form(form): Form<NewRepoForm>,
 ) -> AppResult<Response> {
     let user = require_login(&state.auth, &headers).await?;
+    let personal_username = user.username.clone();
+    let organizations = queries::list_owned_organizations(&state.pool, user.id).await?;
+    let owner = match form
+        .owner
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        None => user.clone(),
+        Some(slug) => {
+            let namespace = queries::get_namespace_by_username(&state.pool, slug)
+                .await?
+                .ok_or_else(|| AppError::bad("organization not found"))?;
+            if !namespace.is_organization()
+                || !organizations.iter().any(|org| org.id == namespace.id)
+            {
+                return Err(AppError::forbidden());
+            }
+            namespace
+        }
+    };
     let name = form.name.trim().to_string();
     let description = form.description.unwrap_or_default();
     let visibility = match form.visibility.as_deref() {
@@ -1878,29 +2430,36 @@ pub async fn new_repo(
     if !valid_repo_name(&name) {
         return Ok(NewRepoTemplate {
             viewer: Some(user),
+            personal_username,
+            organizations,
             error: Some("invalid repository name".into()),
         }
         .into_response());
     }
 
-    if queries::get_repo(&state.pool, &user.username, &name)
+    if queries::get_repo(&state.pool, &owner.username, &name)
         .await?
         .is_some()
     {
         return Ok(NewRepoTemplate {
             viewer: Some(user),
+            personal_username,
+            organizations,
             error: Some("repository already exists".into()),
         }
         .into_response());
     }
 
-    let repo = queries::create_repo(&state.pool, user.id, &name, &description, visibility).await?;
-    git::init_bare(
+    let repo = queries::create_repo(&state.pool, owner.id, &name, &description, visibility).await?;
+    if let Err(e) = git::init_bare(
         &state.config.repos_dir(),
-        &user.username,
+        &owner.username,
         &name,
         &repo.default_branch,
-    )?;
+    ) {
+        let _ = queries::delete_repo(&state.pool, repo.id).await;
+        return Err(AppError::internal(format!("could not initialize repository: {e}")));
+    }
     let author_name = if user.display_name.is_empty() {
         user.username.as_str()
     } else {
@@ -1913,7 +2472,7 @@ pub async fn new_repo(
     };
     let _ = git::seed_initial_commit(
         &state.config.repos_dir(),
-        &user.username,
+        &owner.username,
         &name,
         &repo.default_branch,
         author_name,
@@ -1930,7 +2489,7 @@ pub async fn new_repo(
     )
     .await?;
 
-    Ok(redirect_see_other(&format!("/{}/{}", user.username, name)))
+    Ok(redirect_see_other(&format!("/{}/{}", owner.username, name)))
 }
 
 // ├óΓÇ¥Γé¼├óΓÇ¥Γé¼ profile settings ├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼
@@ -2004,9 +2563,8 @@ pub async fn profile_settings_save(
                     continue;
                 }
                 let Some(ext) = sniff_image_ext(&data, &ct) else {
-                    avatar_error = Some(
-                        "avatar must be png, jpeg, gif, or webp (heic not supported)".into(),
-                    );
+                    avatar_error =
+                        Some("avatar must be png, jpeg, gif, or webp (heic not supported)".into());
                     continue;
                 };
                 if let Err(e) = std::fs::create_dir_all(state.config.avatars_dir()) {
@@ -2149,7 +2707,7 @@ pub async fn avatar(
     State(state): State<AppState>,
     Path(user_id): Path<Uuid>,
 ) -> AppResult<Response> {
-    let user = queries::get_user_by_id(&state.pool, user_id)
+    let user = queries::get_user_by_id_any(&state.pool, user_id)
         .await?
         .ok_or_else(AppError::not_found)?;
 
@@ -2196,15 +2754,54 @@ pub async fn profile(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(username): Path<String>,
-) -> AppResult<impl IntoResponse> {
+) -> AppResult<Response> {
     let viewer = current_user(&state.auth, &headers).await?;
+    if let Some((organization, profile)) =
+        queries::get_organization_by_username(&state.pool, &username).await?
+    {
+        let viewer_id = viewer.as_ref().map(|u| u.id);
+        let membership = if let Some(id) = viewer_id {
+            queries::organization_membership(&state.pool, organization.id, id).await?
+        } else {
+            None
+        };
+        let repos = queries::list_user_repos(&state.pool, organization.id, viewer_id).await?;
+        let members =
+            organization_member_views(&state, organization.id, membership.is_some()).await?;
+        return Ok(OrganizationTemplate {
+            viewer,
+            organization,
+            description: profile.description,
+            repos,
+            members,
+            can_manage: membership
+                .as_ref()
+                .map(|m| m.role == "owner")
+                .unwrap_or(false),
+            is_member: membership.is_some(),
+            is_owner: membership
+                .as_ref()
+                .map(|m| m.role == "owner")
+                .unwrap_or(false),
+            member_visibility: membership
+                .as_ref()
+                .map(|m| m.visibility.clone())
+                .unwrap_or_else(|| "private".into()),
+        }
+        .into_response());
+    }
     let profile = queries::get_user_by_username(&state.pool, &username)
         .await?
         .ok_or_else(AppError::not_found)?;
     let viewer_id = viewer.as_ref().map(|u| u.id);
     let repos = queries::list_user_repos(&state.pool, profile.id, viewer_id).await?;
-    let starred_raw =
-        queries::list_public_starred_repos(&state.pool, profile.id, 30).await?;
+    let organizations = queries::list_user_organization_names(
+        &state.pool,
+        profile.id,
+        viewer_id == Some(profile.id),
+    )
+    .await?;
+    let starred_raw = queries::list_public_starred_repos(&state.pool, profile.id, 30).await?;
     let starred = starred_raw
         .into_iter()
         .map(|(repo, owner)| ExploreRepo { owner, repo })
@@ -2213,10 +2810,7 @@ pub async fn profile(
         queries::latest_activity_for_watched_repos(&state.pool, profile.id, 30).await?;
     let watched_activity = map_activity_rows(watched_raw);
     let graph = queries::commit_graph(&state.pool, profile.id, 365).await?;
-    let is_self = viewer
-        .as_ref()
-        .map(|v| v.id == profile.id)
-        .unwrap_or(false);
+    let is_self = viewer.as_ref().map(|v| v.id == profile.id).unwrap_or(false);
     let avatar_url = avatar_url_for(&profile);
     let has_activity = graph.iter().any(|d| d.count > 0);
     Ok(ProfileTemplate {
@@ -2224,12 +2818,14 @@ pub async fn profile(
         profile,
         avatar_url,
         repos,
+        organizations,
         starred,
         watched_activity,
         graph,
         has_activity,
         is_self,
-    })
+    }
+    .into_response())
 }
 
 // ├óΓÇ¥Γé¼├óΓÇ¥Γé¼ repository browse ├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼
@@ -2314,6 +2910,11 @@ pub async fn repo_home(
     };
 
     let social = og::repo_social_meta(&state.config.public_url, &owner, &repository);
+    let fork_organizations = if let Some(ref u) = viewer {
+        queries::list_owned_organizations(&state.pool, u.id).await?
+    } else {
+        Vec::new()
+    };
     Ok(RepoHomeTemplate {
         viewer,
         owner: owner_user,
@@ -2331,6 +2932,7 @@ pub async fn repo_home(
         latest_commit,
         commit_count,
         forked_from,
+        fork_organizations,
         starred,
         watching,
         social,
@@ -2381,13 +2983,7 @@ pub async fn repo_tree(
     );
     let readme_html = match git::find_readme(&grepo, &branch, &path) {
         Ok(Some((name, src))) => Some(readme_to_html(
-            &name,
-            &src,
-            &owner,
-            &repo,
-            &branch,
-            &path,
-            &grepo,
+            &name, &src, &owner, &repo, &branch, &path, &grepo,
         )),
         _ => None,
     };
@@ -2427,8 +3023,8 @@ pub async fn repo_blob(
     if path.is_empty() {
         return Err(AppError::bad("missing file path"));
     }
-    let (data, binary) = git::read_blob(&grepo, &branch, &path)
-        .map_err(|_| AppError::not_found())?;
+    let (data, binary) =
+        git::read_blob(&grepo, &branch, &path).map_err(|_| AppError::not_found())?;
     let size = data.len();
     let (content_html, is_markdown) = if binary {
         (None, false)
@@ -2441,9 +3037,8 @@ pub async fn repo_blob(
                 git_ref: &branch,
                 dir: parent_dir(&path),
             };
-            let html = render_markdown_in_repo(&text, &base, |p| {
-                git::path_is_dir(&grepo, &branch, p)
-            });
+            let html =
+                render_markdown_in_repo(&text, &base, |p| git::path_is_dir(&grepo, &branch, p));
             (Some(html), true)
         } else {
             (Some(highlight(&path, &text)), false)
@@ -2469,15 +3064,20 @@ pub async fn repo_blob(
     })
 }
 
-fn tree_entry_views(grepo: &git2::Repository, branch: &str, entries: Vec<git::TreeEntry>) -> Vec<TreeEntryView> {
+fn tree_entry_views(
+    grepo: &git2::Repository,
+    branch: &str,
+    entries: Vec<git::TreeEntry>,
+) -> Vec<TreeEntryView> {
     entries
         .into_iter()
         .map(|e| {
-            let (commit_message, commit_time) = git::list_commits_for_path(grepo, branch, &e.path, 1)
-                .ok()
-                .and_then(|mut v| v.pop())
-                .map(|c| (c.message, format_unix_time(c.time)))
-                .unwrap_or_else(|| (String::new(), String::new()));
+            let (commit_message, commit_time) =
+                git::list_commits_for_path(grepo, branch, &e.path, 1)
+                    .ok()
+                    .and_then(|mut v| v.pop())
+                    .map(|c| (c.message, format_unix_time(c.time)))
+                    .unwrap_or_else(|| (String::new(), String::new()));
             TreeEntryView {
                 name: e.name,
                 path: e.path,
@@ -2488,7 +3088,6 @@ fn tree_entry_views(grepo: &git2::Repository, branch: &str, entries: Vec<git::Tr
         })
         .collect()
 }
-
 
 pub async fn repo_blame(
     State(state): State<AppState>,
@@ -2650,14 +3249,8 @@ pub async fn repo_commit(
     let diff = git::commit_diff(&grepo, &id).unwrap_or_default();
     let show_full = query_full(q.full.as_deref());
     let (diff_html, truncated, total_lines) = render_diff_html(&diff, show_full);
-    let message_html = linkify_commit_message(
-        &state.pool,
-        repository.id,
-        &owner,
-        &repo,
-        &commit.message,
-    )
-    .await;
+    let message_html =
+        linkify_commit_message(&state.pool, repository.id, &owner, &repo, &commit.message).await;
     Ok(RepoCommitTemplate {
         viewer,
         owner: owner_user,
@@ -2730,14 +3323,8 @@ pub async fn repo_archive_zip(
         .as_deref()
         .map(|s| s.trim_matches('/'))
         .filter(|s| !s.is_empty());
-    let bytes = git::archive_zip(
-        &state.config.repos_dir(),
-        &owner,
-        &repo,
-        &reference,
-        path,
-    )
-    .map_err(|e| AppError::bad(e.to_string()))?;
+    let bytes = git::archive_zip(&state.config.repos_dir(), &owner, &repo, &reference, path)
+        .map_err(|e| AppError::bad(e.to_string()))?;
     let ref_slug = reference.replace('/', "-");
     let filename = match path {
         Some(p) => {
@@ -2961,14 +3548,7 @@ async fn commit_view(
     let signed = extracted.is_some();
     let verification = match extracted {
         Some((sig, payload)) => {
-            git::verify_commit_signature(
-                &state.pool,
-                &sig,
-                &payload,
-                &c.email,
-                c.time,
-            )
-            .await
+            git::verify_commit_signature(&state.pool, &sig, &payload, &c.email, c.time).await
         }
         None => None,
     };
@@ -2976,15 +3556,15 @@ async fn commit_view(
         match verification {
             Some(v) => {
                 let label = v.fingerprint_label().to_string();
-                (
-                    true,
-                    v.kind.clone(),
-                    v.fingerprint,
-                    label,
-                    v.verified_at,
-                )
+                (true, v.kind.clone(), v.fingerprint, label, v.verified_at)
             }
-            None => (false, String::new(), String::new(), String::new(), String::new()),
+            None => (
+                false,
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+            ),
         };
     CommitView {
         id: c.id,
@@ -3141,14 +3721,9 @@ pub async fn issues_list(
     } else {
         Some(state_filter)
     };
-    let issues = queries::list_issues_filtered(
-        &state.pool,
-        repository.id,
-        state_arg,
-        q.label,
-        q.milestone,
-    )
-    .await?;
+    let issues =
+        queries::list_issues_filtered(&state.pool, repository.id, state_arg, q.label, q.milestone)
+            .await?;
     let items = build_issue_list_items(&state.pool, issues).await?;
     let labels = queries::list_labels(&state.pool, repository.id).await?;
     let milestones = queries::list_milestones(&state.pool, repository.id, None).await?;
@@ -3554,14 +4129,9 @@ pub async fn pulls_list(
         Some("closed") | Some("merged") | Some("open") => q.state.as_deref(),
         _ => Some("open"),
     };
-    let pulls = queries::list_pulls_filtered(
-        &state.pool,
-        repository.id,
-        filter,
-        q.label,
-        q.milestone,
-    )
-    .await?;
+    let pulls =
+        queries::list_pulls_filtered(&state.pool, repository.id, filter, q.label, q.milestone)
+            .await?;
     let items = build_pull_list_items(&state.pool, pulls).await?;
     let labels = queries::list_labels(&state.pool, repository.id).await?;
     let milestones = queries::list_milestones(&state.pool, repository.id, None).await?;
@@ -3778,14 +4348,15 @@ pub async fn pull_view(
     let mut commits = Vec::new();
     let mut diff_files = Vec::new();
     if let Ok(g) = git::open_bare(&state.config.repos_dir(), &owner, &repo) {
-        let prepared: Vec<_> = git::commits_between(&g, &pull.source_branch, &pull.target_branch, 100)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|c| {
-                let extracted = git::extract_commit_signature(&g, &c.id);
-                (c, extracted)
-            })
-            .collect();
+        let prepared: Vec<_> =
+            git::commits_between(&g, &pull.source_branch, &pull.target_branch, 100)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|c| {
+                    let extracted = git::extract_commit_signature(&g, &c.id);
+                    (c, extracted)
+                })
+                .collect();
         commits = commit_views(&state, prepared).await;
         let diff =
             git::branch_diff(&g, &pull.source_branch, &pull.target_branch).unwrap_or_default();
@@ -3917,8 +4488,7 @@ pub async fn pull_comment(
     Path((owner, repo, number)): Path<(String, String, i32)>,
     Form(form): Form<CommentForm>,
 ) -> AppResult<Response> {
-    let (repository, _o, viewer, _a) =
-        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let (repository, _o, viewer, _a) = load_repo_context(&state, &owner, &repo, &headers).await?;
     let user = viewer.ok_or_else(AppError::unauthorized)?;
     let pull = queries::get_pull(&state.pool, repository.id, number)
         .await?
@@ -3973,8 +4543,7 @@ pub async fn pull_review(
     Path((owner, repo, number)): Path<(String, String, i32)>,
     Form(form): Form<PullReviewForm>,
 ) -> AppResult<Response> {
-    let (repository, _o, viewer, _a) =
-        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let (repository, _o, viewer, _a) = load_repo_context(&state, &owner, &repo, &headers).await?;
     let user = viewer.ok_or_else(AppError::unauthorized)?;
     let pull = queries::get_pull(&state.pool, repository.id, number)
         .await?
@@ -4113,7 +4682,9 @@ pub async fn pull_merge(
             "merge_commit": merge_commit,
         }),
     );
-    Ok(redirect_see_other(&format!("/{owner}/{repo}/pulls/{number}")))
+    Ok(redirect_see_other(&format!(
+        "/{owner}/{repo}/pulls/{number}"
+    )))
 }
 
 pub async fn pull_close(
@@ -4150,11 +4721,12 @@ pub async fn pull_close(
             "target_branch": pull.target_branch,
         }),
     );
-    Ok(redirect_see_other(&format!("/{owner}/{repo}/pulls/{number}")))
+    Ok(redirect_see_other(&format!(
+        "/{owner}/{repo}/pulls/{number}"
+    )))
 }
 
 // ├óΓÇ¥Γé¼├óΓÇ¥Γé¼ releases ├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼├óΓÇ¥Γé¼
-
 
 fn asset_views(assets: Vec<crate::db::models::ReleaseAsset>) -> Vec<ReleaseAssetView> {
     assets
@@ -5208,7 +5780,7 @@ pub async fn repo_delete(
         serde_json::json!({}),
     )
     .await?;
-    Ok(redirect_see_other(&format!("/{}", user.username)))
+    Ok(redirect_see_other(&format!("/{}", owner)))
 }
 
 #[derive(Deserialize)]
@@ -5229,9 +5801,17 @@ pub async fn repo_transfer(
         return Err(AppError::forbidden());
     }
     let new_name = form.new_owner.trim();
-    let new_owner = queries::get_user_by_username(&state.pool, new_name)
+    let new_owner = queries::get_namespace_by_username(&state.pool, new_name)
         .await?
         .ok_or_else(|| AppError::bad("user not found"))?;
+    if new_owner.is_organization()
+        && queries::organization_membership(&state.pool, new_owner.id, _user.id)
+            .await?
+            .map(|m| m.role != "owner")
+            .unwrap_or(true)
+    {
+        return Err(AppError::forbidden());
+    }
     if new_owner.id == repository.owner_id {
         return Err(AppError::bad("already owned by that user"));
     }
@@ -5244,19 +5824,27 @@ pub async fn repo_transfer(
 
     let old_path = git::bare_path(&state.config.repos_dir(), &owner, &repo);
     let new_path = git::bare_path(&state.config.repos_dir(), &new_owner.username, &repo);
+    if new_path.exists() {
+        return Err(AppError::bad("target repository path already exists"));
+    }
+    let mut moved = false;
     if old_path.exists() {
         if let Some(parent) = new_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::rename(&old_path, &new_path).map_err(|e| {
-            AppError::internal(format!("failed to move repository on disk: {e}"))
-        })?;
+        std::fs::rename(&old_path, &new_path)
+            .map_err(|e| AppError::internal(format!("failed to move repository on disk: {e}")))?;
+        moved = true;
     }
 
-    queries::transfer_repo(&state.pool, repository.id, new_owner.id).await?;
+    if let Err(e) = queries::transfer_repo(&state.pool, repository.id, new_owner.id).await {
+        if moved {
+            let _ = std::fs::rename(&new_path, &old_path);
+        }
+        return Err(AppError::internal(format!("failed to transfer repository: {e}")));
+    }
     Ok(redirect_see_other(&format!(
         "/{}/{repo}",
         new_owner.username
     )))
 }
-

@@ -4,7 +4,7 @@ pub mod templates;
 
 use crate::git;
 use crate::state::AppState;
-use axum::body::{Body, to_bytes};
+use axum::body::{to_bytes, Body};
 use axum::extract::{DefaultBodyLimit, Request};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::{from_fn, Next};
@@ -99,11 +99,7 @@ async fn normalize_git_url(req: Request, next: Next) -> Response {
             Some(q) => format!("{normalized}?{q}"),
             None => normalized,
         };
-        return (
-            StatusCode::PERMANENT_REDIRECT,
-            [(header::LOCATION, dest)],
-        )
-            .into_response();
+        return (StatusCode::PERMANENT_REDIRECT, [(header::LOCATION, dest)]).into_response();
     }
     next.run(req).await
 }
@@ -131,7 +127,10 @@ pub fn app_router(state: AppState) -> Router {
         .route("/auth/callback", get(routes::auth_callback))
         .route("/auth/logout", get(routes::auth_logout))
         .route("/admin", get(routes::admin_panel))
-        .route("/admin/users/{username}/audit", get(routes::admin_user_audit))
+        .route(
+            "/admin/users/{username}/audit",
+            get(routes::admin_user_audit),
+        )
         .route("/admin/users", post(routes::admin_set_user))
         .route("/admin/users/suspend", post(routes::admin_set_suspended))
         .route("/admin/motd", post(routes::admin_save_motd))
@@ -161,6 +160,46 @@ pub fn app_router(state: AppState) -> Router {
             "/notifications/{id}/read",
             post(routes::notifications_mark_read),
         )
+        .route(
+            "/organizations/new",
+            get(routes::organization_new_form).post(routes::organization_new),
+        )
+        .route(
+            "/organizations/{organization}/settings",
+            get(routes::organization_settings).post(routes::organization_settings_save),
+        )
+        .route(
+            "/organizations/{organization}/delete",
+            post(routes::organization_delete),
+        )
+        .route(
+            "/organizations/{organization}/people/invite",
+            post(routes::organization_invite),
+        )
+        .route(
+            "/organizations/{organization}/people/{user_id}/role",
+            post(routes::organization_member_role),
+        )
+        .route(
+            "/organizations/{organization}/people/{user_id}/remove",
+            post(routes::organization_member_remove),
+        )
+        .route(
+            "/organizations/{organization}/people/{user_id}/visibility",
+            post(routes::organization_membership_visibility),
+        )
+        .route(
+            "/organizations/{organization}/leave",
+            post(routes::organization_leave),
+        )
+        .route(
+            "/organizations/{organization}/invitations/{id}/cancel",
+            post(routes::organization_invitation_cancel),
+        )
+        .route(
+            "/organizations/invitations/{id}",
+            get(routes::organization_invitation_page).post(routes::organization_invitation_respond),
+        )
         .route("/new", get(routes::new_repo_form).post(routes::new_repo))
         .route(
             "/settings/profile",
@@ -183,10 +222,7 @@ pub fn app_router(state: AppState) -> Router {
             "/settings/account/privacy",
             post(routes_extra::account_privacy),
         )
-        .route(
-            "/settings/account/theme",
-            post(routes_extra::account_theme),
-        )
+        .route("/settings/account/theme", post(routes_extra::account_theme))
         .route(
             "/settings/account/emails",
             post(routes_extra::account_add_email),
@@ -207,7 +243,10 @@ pub fn app_router(state: AppState) -> Router {
             "/settings/account/sessions/revoke-others",
             post(routes_extra::account_revoke_others),
         )
-        .route("/settings/account/export", get(routes_extra::account_export))
+        .route(
+            "/settings/account/export",
+            get(routes_extra::account_export),
+        )
         .route(
             "/settings/account/delete",
             post(routes_extra::account_delete),
@@ -485,4 +524,3 @@ mod path_tests {
         assert_eq!(format_render_duration(Duration::from_millis(42)), "42ms");
     }
 }
-

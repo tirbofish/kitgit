@@ -9,11 +9,11 @@ use crate::db::queries;
 use crate::git;
 use crate::state::AppState;
 use crate::web::templates::*;
+use axum::body::Body;
 use axum::extract::{Form, Path, Query, State};
 use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE, SET_COOKIE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::body::Body;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -54,7 +54,8 @@ pub async fn repo_raw(
     if path.is_empty() {
         return Err(AppError::bad("missing file path"));
     }
-    let (data, _binary) = git::read_blob(&grepo, &branch, &path).map_err(|_| AppError::not_found())?;
+    let (data, _binary) =
+        git::read_blob(&grepo, &branch, &path).map_err(|_| AppError::not_found())?;
     let filename = path.rsplit('/').next().unwrap_or("file");
     let ct = mime_guess::from_path(filename)
         .first_or_octet_stream()
@@ -62,10 +63,15 @@ pub async fn repo_raw(
     let disp = format!("attachment; filename=\"{filename}\"");
     Ok((
         [
-            (CONTENT_TYPE, HeaderValue::from_str(&ct).unwrap_or_else(|_| HeaderValue::from_static("application/octet-stream"))),
+            (
+                CONTENT_TYPE,
+                HeaderValue::from_str(&ct)
+                    .unwrap_or_else(|_| HeaderValue::from_static("application/octet-stream")),
+            ),
             (
                 CONTENT_DISPOSITION,
-                HeaderValue::from_str(&disp).unwrap_or_else(|_| HeaderValue::from_static("attachment")),
+                HeaderValue::from_str(&disp)
+                    .unwrap_or_else(|_| HeaderValue::from_static("attachment")),
             ),
         ],
         Body::from(data),
@@ -95,27 +101,49 @@ pub async fn repo_watch(
     Ok(redirect_see_other(&format!("/{owner}/{repo}")))
 }
 
+#[derive(Deserialize, Default)]
+pub struct RepoForkForm {
+    pub owner: Option<String>,
+}
+
 pub async fn repo_fork(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((owner, repo)): Path<(String, String)>,
+    Form(form): Form<RepoForkForm>,
 ) -> AppResult<Response> {
     let user = require_login(&state.auth, &headers).await?;
-    let (repository, owner_user, _, _) =
-        load_repo_context(&state, &owner, &repo, &headers).await?;
+    let (repository, owner_user, _, _) = load_repo_context(&state, &owner, &repo, &headers).await?;
     if owner_user.id == user.id {
         return Err(AppError::bad("cannot fork your own repository"));
     }
-    if let Some(existing) =
-        queries::get_fork_of_user(&state.pool, repository.id, user.id).await?
+    let target = match form
+        .owner
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        None => user.clone(),
+        Some(slug) => {
+            let namespace = queries::get_namespace_by_username(&state.pool, slug)
+                .await?
+                .ok_or_else(|| AppError::bad("organization not found"))?;
+            let owned = queries::list_owned_organizations(&state.pool, user.id).await?;
+            if !namespace.is_organization() || !owned.iter().any(|org| org.id == namespace.id) {
+                return Err(AppError::forbidden());
+            }
+            namespace
+        }
+    };
+    if let Some(existing) = queries::get_fork_of_user(&state.pool, repository.id, target.id).await?
     {
         return Ok(redirect_see_other(&format!(
             "/{}/{}",
-            user.username, existing.name
+            target.username, existing.name
         )));
     }
     let name = repository.name.clone();
-    if queries::get_repo(&state.pool, &user.username, &name)
+    if queries::get_repo(&state.pool, &target.username, &name)
         .await?
         .is_some()
     {
@@ -124,19 +152,29 @@ pub async fn repo_fork(
         ));
     }
     let src = git::bare_path(&state.config.repos_dir(), &owner, &repo);
-    let dest = git::bare_path(&state.config.repos_dir(), &user.username, &name);
+    let dest = git::bare_path(&state.config.repos_dir(), &target.username, &name);
     git::clone_bare(&src, &dest)?;
-    let forked = queries::create_fork(
+    let forked = match queries::create_fork(
         &state.pool,
-        user.id,
+        target.id,
         &name,
         &repository.description,
         &repository.visibility,
         repository.id,
     )
-    .await?;
+    .await
+    {
+        Ok(repo) => repo,
+        Err(e) => {
+            let _ = git::remove_bare(&state.config.repos_dir(), &target.username, &name);
+            return Err(AppError::internal(format!("could not create fork: {e}")));
+        }
+    };
     let _ = forked;
-    Ok(redirect_see_other(&format!("/{}/{}", user.username, name)))
+    Ok(redirect_see_other(&format!(
+        "/{}/{}",
+        target.username, name
+    )))
 }
 
 #[derive(Deserialize)]
@@ -512,10 +550,7 @@ pub async fn mfa_settings(
     Ok(mfa_page(user, mfa, None, None, None)?)
 }
 
-pub async fn mfa_enroll(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> AppResult<Response> {
+pub async fn mfa_enroll(State(state): State<AppState>, headers: HeaderMap) -> AppResult<Response> {
     let user = require_login(&state.auth, &headers).await?;
     if queries::mfa_is_enabled(&state.pool, user.id).await? {
         return Ok(redirect_see_other("/settings/mfa"));
@@ -554,7 +589,10 @@ pub async fn mfa_confirm(
         .into_response());
     }
     let codes = crate::mfa::generate_recovery_codes();
-    let hashes: Vec<String> = codes.iter().map(|c| crate::mfa::hash_recovery_code(c)).collect();
+    let hashes: Vec<String> = codes
+        .iter()
+        .map(|c| crate::mfa::hash_recovery_code(c))
+        .collect();
     let secret = pending.to_string();
     queries::mfa_confirm_enroll(&state.pool, user.id, &secret, &hashes).await?;
     record_audit(
@@ -595,7 +633,8 @@ pub async fn mfa_disable(
         .ok_or_else(|| AppError::bad("MFA is not enabled"))?;
     let ok = if crate::mfa::verify_totp(secret, &form.code) {
         true
-    } else if let Some(idx) = crate::mfa::verify_recovery_code(&mfa.recovery_code_hashes, &form.code)
+    } else if let Some(idx) =
+        crate::mfa::verify_recovery_code(&mfa.recovery_code_hashes, &form.code)
     {
         let mut hashes = mfa.recovery_code_hashes.clone();
         hashes.remove(idx);
@@ -652,7 +691,7 @@ pub async fn account_change_username(
         return Err(AppError::bad("invalid username"));
     }
     if username != user.username {
-        if queries::get_user_by_username(&state.pool, &username)
+        if queries::get_namespace_by_username(&state.pool, &username)
             .await?
             .is_some()
         {
@@ -911,6 +950,14 @@ pub async fn account_delete(
     if form.confirm != user.username {
         return Err(AppError::bad("type your username to confirm"));
     }
+    for org in queries::list_owned_organizations(&state.pool, user.id).await? {
+        if queries::count_organization_owners(&state.pool, org.id).await? <= 1 {
+            return Err(AppError::bad(format!(
+                "transfer ownership of organization {} before deleting your account",
+                org.username
+            )));
+        }
+    }
     // Remove repos on disk
     let root = state.config.repos_dir().join(&user.username);
     if root.exists() {
@@ -920,10 +967,7 @@ pub async fn account_delete(
     Ok((
         StatusCode::SEE_OTHER,
         [
-            (
-                axum::http::header::LOCATION,
-                HeaderValue::from_static("/"),
-            ),
+            (axum::http::header::LOCATION, HeaderValue::from_static("/")),
             (SET_COOKIE, clear_session_cookie()),
         ],
     )
@@ -980,7 +1024,10 @@ pub async fn gpg_delete(
     Ok(redirect_see_other("/settings/keys"))
 }
 
-fn can_manage_mirror(access: crate::db::models::Access, viewer: &Option<crate::db::models::User>) -> bool {
+fn can_manage_mirror(
+    access: crate::db::models::Access,
+    viewer: &Option<crate::db::models::User>,
+) -> bool {
     access.can_admin() || viewer.as_ref().map(|u| u.is_site_admin).unwrap_or(false)
 }
 
@@ -1170,9 +1217,15 @@ pub async fn label_create(
         .into_response());
     }
     let desc = form.description.unwrap_or_default();
-    queries::create_label(&state.pool, repository.id, name, &color.unwrap(), desc.trim())
-        .await
-        .map_err(|e| AppError::bad(format!("could not create label: {e}")))?;
+    queries::create_label(
+        &state.pool,
+        repository.id,
+        name,
+        &color.unwrap(),
+        desc.trim(),
+    )
+    .await
+    .map_err(|e| AppError::bad(format!("could not create label: {e}")))?;
     Ok(redirect_see_other(&format!("/{owner}/{repo}/labels")))
 }
 

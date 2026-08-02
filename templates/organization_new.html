@@ -1,0 +1,15 @@
+{% extends "layout.html" %}
+{% block title %}new organization — kitgit{% endblock %}
+{% block content %}
+<section class="kg-section">
+  <span class="kg-kicker">new</span>
+  <h1 class="kg-title">Create organization</h1>
+  {% if let Some(err) = error %}<div class="kg-flash">{{ err }}</div>{% endif %}
+  <form class="kg-form" method="post" action="/organizations/new">
+    <label>name <input name="name" maxlength="39" pattern="[a-z0-9][a-z0-9_-]*" required autofocus /></label>
+    <label>display name <input name="display_name" maxlength="120" /></label>
+    <label>description <textarea name="description" rows="4"></textarea></label>
+    <button class="kg-btn" type="submit">create organization</button>
+  </form>
+</section>
+{% endblock %}
