@@ -42,6 +42,7 @@
         </button>
       </form>
       <form method="post" action="/{{ owner.username }}/{{ repo.name }}/fork">
+        {% if !fork_organizations.is_empty() %}<select name="owner" aria-label="fork destination"><option value="">personal</option>{% for org in fork_organizations %}<option value="{{ org.username }}">{{ org.username }}</option>{% endfor %}</select>{% endif %}
         <button class="kg-btn kg-btn--ghost" type="submit">
           <span class="kg-icon" style="--icon:url('/static/icons/git-fork.svg')"></span>
           fork

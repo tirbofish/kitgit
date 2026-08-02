@@ -1,0 +1,32 @@
+{% extends "layout.html" %}
+{% block title %}{{ organization.username }} — kitgit{% endblock %}
+{% block content %}
+<section class="kg-section">
+  <div class="kg-profile-head">
+    <img class="kg-avatar kg-avatar--lg" src="/avatars/{{ organization.id }}" alt="" />
+    <div>
+      <h1 class="kg-display">{{ organization.display_name }}</h1>
+      <p class="kg-muted">@{{ organization.username }}</p>
+      {% if !description.is_empty() %}<p>{{ description }}</p>{% endif %}
+    </div>
+  </div>
+  {% if can_manage %}<p><a class="kg-btn kg-btn--ghost" href="/organizations/{{ organization.username }}/settings">organization settings</a></p>{% endif %}
+  {% if is_member %}<form method="post" action="/organizations/{{ organization.username }}/leave"><button class="kg-btn kg-btn--danger-ghost" type="submit">leave organization</button></form>{% endif %}
+  {% if is_member %}{% if let Some(v) = viewer %}
+    <form class="kg-form" method="post" action="/organizations/{{ organization.username }}/people/{{ v.id }}/visibility">
+      <label>membership visibility <select name="visibility"><option value="private"{% if member_visibility == "private" %} selected{% endif %}>private</option><option value="public"{% if member_visibility == "public" %} selected{% endif %}>public</option></select></label>
+      <button class="kg-btn kg-btn--ghost" type="submit">save visibility</button>
+    </form>
+  {% endif %}{% endif %}
+  <span class="kg-kicker">repositories</span>
+  {% if repos.is_empty() %}
+    <p class="kg-muted">No repositories.</p>
+  {% else %}
+    <ul class="kg-list">{% for r in repos %}<li><span><a href="/{{ organization.username }}/{{ r.name }}">{{ r.name }}</a>{% if r.visibility == "private" %}<span class="kg-badge">private</span>{% endif %}{% if !r.description.is_empty() %}<span class="kg-muted"> — {{ r.description }}</span>{% endif %}</span><span class="kg-meta">{{ r.updated_at }}</span></li>{% endfor %}</ul>
+  {% endif %}
+  <span class="kg-kicker">members</span>
+  {% if members.is_empty() %}<p class="kg-muted">No public members.</p>{% else %}
+    <ul class="kg-list">{% for m in members %}<li><span><img class="kg-avatar" src="{{ m.avatar_url }}" alt="" /> <a href="/{{ m.user.username }}">{{ m.user.username }}</a></span><span class="kg-meta">{{ m.role }}</span></li>{% endfor %}</ul>
+  {% endif %}
+</section>
+{% endblock %}

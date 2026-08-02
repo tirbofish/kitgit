@@ -15,6 +15,13 @@
       <input type="text" name="name" required maxlength="100" pattern="[A-Za-z0-9._-]+" autofocus />
     </label>
     <label>
+      owner
+      <select name="owner">
+        <option value="">{{ personal_username }} (personal)</option>
+        {% for org in organizations %}<option value="{{ org.username }}">{{ org.username }} (organization)</option>{% endfor %}
+      </select>
+    </label>
+    <label>
       description
       <textarea name="description" rows="3"></textarea>
     </label>

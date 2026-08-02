@@ -1,0 +1,14 @@
+{% extends "layout.html" %}
+{% block title %}organization invitation — kitgit{% endblock %}
+{% block content %}
+<section class="kg-section">
+  <h1 class="kg-title">Join {{ organization.username }}?</h1>
+  <p>{{ inviter.username }} invited you as an {{ invitation.role }}.</p>
+  {% if let Some(err) = error %}<div class="kg-flash">{{ err }}</div>{% else %}
+    <div class="kg-actions">
+      <form method="post" action="/organizations/invitations/{{ invitation.id }}"><input type="hidden" name="action" value="accept" /><button class="kg-btn" type="submit">accept</button></form>
+      <form method="post" action="/organizations/invitations/{{ invitation.id }}"><input type="hidden" name="action" value="decline" /><button class="kg-btn kg-btn--ghost" type="submit">decline</button></form>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -66,6 +66,11 @@
     </ul>
   {% endif %}
 
+  <span class="kg-kicker">organizations</span>
+  {% if organizations.is_empty() %}<p class="kg-muted">No public organization memberships.</p>{% else %}
+    <ul class="kg-list">{% for org in organizations %}<li><a href="/{{ org.username }}">{{ org.username }}</a><span class="kg-meta">{{ org.display_name }}</span></li>{% endfor %}</ul>
+  {% endif %}
+
   <span class="kg-kicker">starred</span>
   {% if starred.is_empty() %}
     <p class="kg-muted">No public starred repositories.</p>

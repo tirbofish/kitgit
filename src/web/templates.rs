@@ -1,9 +1,9 @@
-use crate::og::SocialMeta;
 use crate::db::models::{
-    Access, BranchRule, CommitDay, GpgKey, Issue, Label, Milestone, Notification, PullRequest,
-    Release, RepoMirror, Repository, SshKey, User, UserEmail,
+    Access, BranchRule, CommitDay, GpgKey, Issue, Label, Milestone, Notification,
+    OrganizationInvitation, PullRequest, Release, RepoMirror, Repository, SshKey, User, UserEmail,
 };
 use crate::db::DeployKey;
+use crate::og::SocialMeta;
 use askama::Template;
 use askama_web::WebTemplate;
 use chrono::{DateTime, Utc};
@@ -285,6 +285,57 @@ pub struct ErrorTemplate {
 #[template(path = "new_repo.html")]
 pub struct NewRepoTemplate {
     pub viewer: Option<User>,
+    pub personal_username: String,
+    pub organizations: Vec<User>,
+    pub error: Option<String>,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "organization_new.html")]
+pub struct OrganizationNewTemplate {
+    pub viewer: Option<User>,
+    pub error: Option<String>,
+}
+
+pub struct OrganizationMemberView {
+    pub user: User,
+    pub role: String,
+    pub visibility: String,
+    pub avatar_url: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "organization.html")]
+pub struct OrganizationTemplate {
+    pub viewer: Option<User>,
+    pub organization: User,
+    pub description: String,
+    pub repos: Vec<Repository>,
+    pub members: Vec<OrganizationMemberView>,
+    pub can_manage: bool,
+    pub is_member: bool,
+    pub is_owner: bool,
+    pub member_visibility: String,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "organization_settings.html")]
+pub struct OrganizationSettingsTemplate {
+    pub viewer: Option<User>,
+    pub organization: User,
+    pub description: String,
+    pub members: Vec<OrganizationMemberView>,
+    pub invitations: Vec<OrganizationInvitation>,
+    pub error: Option<String>,
+}
+
+#[derive(Template, WebTemplate)]
+#[template(path = "organization_invitation.html")]
+pub struct OrganizationInvitationTemplate {
+    pub viewer: Option<User>,
+    pub invitation: OrganizationInvitation,
+    pub organization: User,
+    pub inviter: User,
     pub error: Option<String>,
 }
 
@@ -366,6 +417,7 @@ pub struct ProfileTemplate {
     pub profile: User,
     pub avatar_url: String,
     pub repos: Vec<Repository>,
+    pub organizations: Vec<User>,
     pub starred: Vec<ExploreRepo>,
     pub watched_activity: Vec<ActivityRow>,
     pub graph: Vec<CommitDay>,
@@ -394,6 +446,7 @@ pub struct RepoHomeTemplate {
     pub starred: bool,
     pub watching: bool,
     pub forked_from: Option<(String, String)>,
+    pub fork_organizations: Vec<User>,
     pub social: SocialMeta,
 }
 
