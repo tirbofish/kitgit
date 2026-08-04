@@ -26,3 +26,6 @@ cargo build --release
 ## Docs
 
 check out the documentation in the [docs](docs) folder.
+
+## License
+kitgit uses the MIT License, however realistically I could not care less what you do with this project
