@@ -2,6 +2,11 @@
 
 a minimalistic git frontend built in Rust and pure HTML templates.
 
+> [!WARNING]
+> This project is pure slop. I used to use this myself, but found it easier to just host it on GitHub or some other platform.
+>
+> If you wish to run it, I'm not maintaining it, so deploy at your own discretion. 
+
 ## Deployment
 
 ```bash
